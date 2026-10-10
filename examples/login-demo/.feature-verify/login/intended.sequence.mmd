@@ -1,0 +1,34 @@
+sequenceDiagram
+  actor User
+  box Client
+    participant UI as Login page
+  end
+  box Server
+    participant API as /api/login
+    participant Auth as Auth service
+  end
+  User->>UI: Enter email + password
+  %% @src S4
+  UI->>API: POST /api/login {email, password}
+  %% @src S4
+  alt missing fields
+    API-->>UI: 400 missing fields
+    %% @assumed A1
+  else account locked (5 failures)
+    API-->>UI: 423 locked
+    %% @src S3
+  else
+    API->>Auth: verify credentials
+    %% @src S1
+    alt wrong password
+      Auth-->>API: fail, count attempt
+      %% @src S3
+      API-->>UI: 401 unauthorized
+      %% @src S2
+    else valid
+      Auth-->>API: token + user
+      %% @src S1
+      API-->>UI: 200 {token, user}
+      %% @src S1
+    end
+  end

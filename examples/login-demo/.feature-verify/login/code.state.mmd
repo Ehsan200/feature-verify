@@ -1,0 +1,6 @@
+stateDiagram-v2
+  [*] --> Active
+  Active --> Active : wrong password (failed++)
+  %% @ref src/services/auth.js:7#failed
+  Active --> SignedIn : valid credentials
+  %% @ref src/services/auth.js:10#token

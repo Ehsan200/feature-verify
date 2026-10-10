@@ -1,0 +1,14 @@
+{
+  "name": "feature-verify",
+  "description": "Visual understanding and verification of AI-built features: intended vs code diagrams.",
+  "owner": {
+    "name": "ehsan"
+  },
+  "plugins": [
+    {
+      "name": "feature-verify",
+      "source": "./",
+      "description": "Understand and verify AI-built features visually: intended vs code diagrams, glossary, risks, local dashboard."
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+flowchart LR
+  subgraph Client
+    ui(["Shop page (index.html)"]):::ui
+    %% @ref public/index.html:5#load
+  end
+  subgraph Server
+    srv["server.js router (node:http)"]:::svc
+    %% @ref src/server.js:10#createServer
+    cart["cart.js addItem / checkout"]:::svc
+    %% @ref src/cart.js:3#addItem
+  end
+  subgraph Data
+    mem[("store.js in-memory products, cart, orders")]:::store
+    %% @ref src/store.js:2#products
+  end
+  ui -->|"GET /api/products, /api/cart"| srv
+  ui -->|"POST /api/cart, /api/checkout"| srv
+  srv --> cart --> mem
+  srv -->|read products| mem

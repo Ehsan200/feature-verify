@@ -1,0 +1,23 @@
+<!doctype html><html><body>
+<ul id="list"></ul><div id="cart">Cart: 0 items</div><button id="checkout">Checkout</button><div id="msg"></div>
+<script>
+const render = c => { cart.textContent = 'Cart: ' + c.lines.reduce((n, l) => n + l.qty, 0) + ' items, $' + c.total; };
+async function load() {
+  const items = await (await fetch('/api/products')).json();
+  list.innerHTML = items.map(p => `<li>${p.name} $${p.price} <button data-id="${p.id}">Add</button></li>`).join('');
+  render(await (await fetch('/api/cart')).json());
+}
+list.onclick = async e => {
+  if (!e.target.dataset.id) return;
+  const r = await fetch('/api/cart', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ productId: +e.target.dataset.id, qty: 1 }) });
+  const body = await r.json();
+  if (r.ok) render(body); else msg.textContent = 'Error: ' + body.error;
+};
+checkout.onclick = async () => {
+  const r = await fetch('/api/checkout', { method: 'POST' });
+  const body = await r.json();
+  msg.textContent = r.ok ? 'Order #' + body.orderId + ' total $' + body.total : 'Error: ' + body.error;
+  if (r.ok) render({ lines: [], total: 0 });
+};
+load();
+</script></body></html>

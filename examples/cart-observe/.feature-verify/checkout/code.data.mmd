@@ -1,0 +1,21 @@
+erDiagram
+  %% @ref src/store.js:2#products
+  Product {
+    int id
+    string name
+    int price
+    int stock "decremented at checkout, can go negative"
+  }
+  %% @ref src/store.js:6#cart
+  CartLine {
+    int productId
+    int qty "written by addItem"
+  }
+  %% @ref src/store.js:7#orders
+  Order {
+    int id
+    int total "sum of price x qty, no discount"
+    json items
+  }
+  Product ||--o{ CartLine : "in cart"
+  Order ||--|{ CartLine : "snapshot of"

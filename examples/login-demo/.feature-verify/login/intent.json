@@ -1,0 +1,37 @@
+{
+  "sources": [
+    {
+      "id": "S1",
+      "kind": "doc",
+      "file": ".feature-verify/login/spec.md",
+      "line": 6,
+      "quote": "Valid credentials return a session token and the user."
+    },
+    {
+      "id": "S2",
+      "kind": "doc",
+      "file": ".feature-verify/login/spec.md",
+      "line": 7,
+      "quote": "A wrong password returns 401."
+    },
+    {
+      "id": "S3",
+      "kind": "doc",
+      "file": ".feature-verify/login/spec.md",
+      "line": 8,
+      "quote": "After 5 failed attempts the account is locked and login returns 423."
+    },
+    {
+      "id": "S4",
+      "kind": "interview",
+      "where": "user, 2026-10-10",
+      "quote": "Login page posts to /api/login."
+    }
+  ],
+  "assumptions": [
+    {
+      "id": "A1",
+      "text": "Missing email or password returns 400."
+    }
+  ]
+}

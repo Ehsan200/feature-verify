@@ -1,0 +1,64 @@
+{
+  "terms": [
+    {
+      "term": "qty",
+      "aka": [
+        "quantity"
+      ],
+      "kind": "field",
+      "meaning": "Quantity: how many units of a product are being added. The shop page always sends 1 per click.",
+      "ref": "src/cart.js:6#qty"
+    },
+    {
+      "term": "stock",
+      "kind": "field",
+      "meaning": "How many units of a product are left. Only reduced at checkout, and never checked against what is already in the cart, so it can go below zero.",
+      "ref": "src/cart.js:21#stock"
+    },
+    {
+      "term": "cart.items",
+      "aka": [
+        "cart line",
+        "CartLine",
+        "lines"
+      ],
+      "kind": "data",
+      "meaning": "The list of products currently in the cart, one line per product with its quantity. There is a single cart shared by everyone.",
+      "ref": "src/store.js:6#cart"
+    },
+    {
+      "term": "addItem",
+      "kind": "function",
+      "meaning": "The code that runs when someone clicks Add: checks the product and stock, then puts it in the cart.",
+      "ref": "src/cart.js:3#addItem"
+    },
+    {
+      "term": "cartView",
+      "kind": "function",
+      "meaning": "Builds what the page shows for the cart: each line with its price, and the total.",
+      "ref": "src/cart.js:13#cartView"
+    },
+    {
+      "term": "out-of-stock",
+      "kind": "error",
+      "meaning": "Error returned when asking for more units than the product's stock in a single request.",
+      "ref": "src/cart.js:7#out-of-stock"
+    },
+    {
+      "term": "bad-qty",
+      "kind": "error",
+      "meaning": "Error returned when the quantity is not a whole number of at least 1.",
+      "ref": "src/cart.js:6#bad-qty"
+    },
+    {
+      "term": "store.js",
+      "aka": [
+        "in-memory",
+        "memory"
+      ],
+      "kind": "module",
+      "meaning": "Where all data lives: plain lists in the server's memory, not a database. Restarting the server erases everything.",
+      "ref": "src/store.js:1#In-memory"
+    }
+  ]
+}

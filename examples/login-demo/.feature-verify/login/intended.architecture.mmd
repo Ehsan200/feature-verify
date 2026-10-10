@@ -1,0 +1,10 @@
+flowchart LR
+  ui(["Login page"]):::ui
+  %% @src S4
+  api["/api/login handler"]:::svc
+  %% @src S4
+  auth["Auth service"]:::svc
+  %% @src S1
+  users[("User accounts + attempt counter")]:::store
+  %% @src S3
+  ui -->|POST /api/login| api --> auth --> users

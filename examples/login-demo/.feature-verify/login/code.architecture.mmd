@@ -1,0 +1,10 @@
+flowchart LR
+  ui(["Login page"]):::ui
+  %% @ref public/index.html:5#onclick
+  srv["server.js (node:http)"]:::svc
+  %% @ref src/server.js:6#createServer
+  auth["auth.js verifyCredentials"]:::svc
+  %% @ref src/services/auth.js:3#verifyCredentials
+  mem[("In-memory users array")]:::store
+  %% @ref src/services/auth.js:1#users
+  ui -->|POST /api/login| srv --> auth --> mem

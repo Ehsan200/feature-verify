@@ -1,0 +1,99 @@
+{
+  "feature": "login",
+  "mode": "verify",
+  "coverage": {
+    "sequence": {
+      "intended": [
+        "intended.sequence.mmd"
+      ],
+      "code": [
+        "code.sequence.mmd"
+      ]
+    },
+    "architecture": {
+      "intended": [
+        "intended.architecture.mmd"
+      ],
+      "code": [
+        "code.architecture.mmd"
+      ]
+    },
+    "data": {
+      "intended": [],
+      "code": []
+    },
+    "state": {
+      "intended": [
+        "intended.state.mmd"
+      ],
+      "code": [
+        "code.state.mmd"
+      ]
+    }
+  },
+  "syntax": {
+    "ok": true,
+    "parser": "mermaid@11.4.1",
+    "errors": [],
+    "warnings": [],
+    "unavailable": null
+  },
+  "refs": {
+    "checked": 14,
+    "failed": [],
+    "missing": [],
+    "ok": true
+  },
+  "intent": {
+    "elements": 16,
+    "sourced": 15,
+    "assumed": 1,
+    "unsourced": [],
+    "unknownIds": [],
+    "badSources": [],
+    "assumptions": [
+      {
+        "id": "A1",
+        "text": "Missing email or password returns 400."
+      }
+    ],
+    "hasIntentFile": true,
+    "ok": true
+  },
+  "glossary": {
+    "hasGlossary": true,
+    "terms": 4,
+    "failed": [],
+    "missingMeaning": [],
+    "ok": true
+  },
+  "endpoints": {
+    "intended": [
+      "POST /api/login"
+    ],
+    "code": [
+      "POST /api/login"
+    ],
+    "intendedMissingInCode": [],
+    "codeNotInIntended": []
+  },
+  "statuses": {
+    "intended": [
+      200,
+      400,
+      401,
+      423
+    ],
+    "code": [
+      200,
+      400,
+      401
+    ],
+    "intendedMissingInCode": [
+      423
+    ],
+    "codeNotInIntended": []
+  },
+  "checkedAt": "2026-10-10T10:30:32.884Z",
+  "ok": false
+}

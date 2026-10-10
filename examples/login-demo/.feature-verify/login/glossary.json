@@ -1,0 +1,38 @@
+{
+  "terms": [
+    {
+      "term": "verifyCredentials",
+      "kind": "function",
+      "meaning": "Checks an email and password against the known users and says whether sign-in succeeds.",
+      "ref": "src/services/auth.js:3#verifyCredentials"
+    },
+    {
+      "term": "failed",
+      "aka": [
+        "failed++",
+        "attempt counter"
+      ],
+      "kind": "field",
+      "meaning": "A per-user counter that goes up by one on every wrong password. Nothing reads it, so it has no effect.",
+      "ref": "src/services/auth.js:7#failed"
+    },
+    {
+      "term": "unknown",
+      "aka": [
+        "unknown email"
+      ],
+      "kind": "error",
+      "meaning": "Reason given when no account has that email. It differs from the wrong-password reason, so a caller can tell which emails are registered.",
+      "ref": "src/services/auth.js:5#unknown"
+    },
+    {
+      "term": "users",
+      "aka": [
+        "In-memory users array"
+      ],
+      "kind": "data",
+      "meaning": "The list of accounts, kept in the server's memory (lost on restart).",
+      "ref": "src/services/auth.js:1#users"
+    }
+  ]
+}

@@ -1,0 +1,168 @@
+{
+  "feature": "login",
+  "status": "mismatch",
+  "summary": "Sign-in works, but the account lockout the spec requires is not implemented: failed attempts are counted and never checked.",
+  "findings": [
+    {
+      "severity": "high",
+      "type": "sequence",
+      "where": "intended vs code",
+      "text": "Spec requires 423 after 5 failed attempts. The code has no lockout branch and never returns 423.",
+      "ref": "src/services/auth.js:7"
+    },
+    {
+      "severity": "high",
+      "type": "state",
+      "where": "intended vs code",
+      "text": "The intended Locked state does not exist in the code: no transition leads to it.",
+      "ref": "src/services/auth.js:7"
+    },
+    {
+      "severity": "low",
+      "type": "sequence",
+      "where": "intended vs code",
+      "text": "The 400 for missing fields exists in code, but its intent is still an open assumption (A1).",
+      "ref": "src/server.js:12"
+    }
+  ],
+  "skipped": {
+    "data": "no persistent store in this demo"
+  },
+  "mechanical": {
+    "feature": "login",
+    "mode": "verify",
+    "coverage": {
+      "sequence": {
+        "intended": [
+          "intended.sequence.mmd"
+        ],
+        "code": [
+          "code.sequence.mmd"
+        ]
+      },
+      "architecture": {
+        "intended": [
+          "intended.architecture.mmd"
+        ],
+        "code": [
+          "code.architecture.mmd"
+        ]
+      },
+      "data": {
+        "intended": [],
+        "code": []
+      },
+      "state": {
+        "intended": [
+          "intended.state.mmd"
+        ],
+        "code": [
+          "code.state.mmd"
+        ]
+      }
+    },
+    "syntax": {
+      "ok": true,
+      "parser": "mermaid@11.4.1",
+      "errors": [],
+      "warnings": [],
+      "unavailable": null
+    },
+    "refs": {
+      "checked": 14,
+      "failed": [],
+      "missing": [],
+      "ok": true
+    },
+    "intent": {
+      "elements": 16,
+      "sourced": 15,
+      "assumed": 1,
+      "unsourced": [],
+      "unknownIds": [],
+      "badSources": [],
+      "assumptions": [
+        {
+          "id": "A1",
+          "text": "Missing email or password returns 400."
+        }
+      ],
+      "hasIntentFile": true,
+      "ok": true
+    },
+    "glossary": {
+      "hasGlossary": true,
+      "terms": 4,
+      "failed": [],
+      "missingMeaning": [],
+      "ok": true
+    },
+    "endpoints": {
+      "intended": [
+        "POST /api/login"
+      ],
+      "code": [
+        "POST /api/login"
+      ],
+      "intendedMissingInCode": [],
+      "codeNotInIntended": []
+    },
+    "statuses": {
+      "intended": [
+        200,
+        400,
+        401,
+        423
+      ],
+      "code": [
+        200,
+        400,
+        401
+      ],
+      "intendedMissingInCode": [
+        423
+      ],
+      "codeNotInIntended": []
+    },
+    "checkedAt": "2026-10-10T10:30:32.884Z",
+    "ok": false
+  },
+  "generatedAt": "2026-10-10T10:30:32.682044+00:00",
+  "risks": [
+    {
+      "impact": "high",
+      "category": "security",
+      "type": "sequence",
+      "text": "No limit on password guessing: a wrong password only increments a counter that nothing reads, so an attacker can try passwords forever.",
+      "ref": "src/services/auth.js:7#failed"
+    },
+    {
+      "impact": "high",
+      "category": "security",
+      "type": "sequence",
+      "text": "The session token is just \"tok-\" plus the user's id, so anyone can make a valid token for any account without a password.",
+      "ref": "src/services/auth.js:10#tok-"
+    },
+    {
+      "impact": "high",
+      "category": "security",
+      "type": "data",
+      "text": "Passwords are stored and compared as plain text; anyone who can read the user list or a memory dump sees every password.",
+      "ref": "src/services/auth.js:6#password"
+    },
+    {
+      "impact": "medium",
+      "category": "privacy",
+      "type": "sequence",
+      "text": "Unknown email and wrong password return different reasons ('unknown' vs 'bad-password'), so anyone can check which emails have accounts.",
+      "ref": "src/services/auth.js:5#unknown"
+    },
+    {
+      "impact": "low",
+      "category": "data loss",
+      "type": "architecture",
+      "text": "Accounts and attempt counts live in server memory and reset on every restart.",
+      "ref": "src/services/auth.js:1#users"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "name": "feature-verify",
+  "version": "0.6.0",
+  "description": "Understand and verify AI-built features visually: intended vs code-derived diagrams (sequence, architecture, data, state), a glossary, risks, mechanical checks and a local dashboard. Reads code; does not run it. Stack-agnostic, web-first.",
+  "author": {
+    "name": "ehsan"
+  },
+  "license": "MIT",
+  "keywords": [
+    "verification",
+    "diagrams",
+    "mermaid",
+    "architecture",
+    "testing",
+    "ai-code-review"
+  ]
+}

@@ -1,0 +1,9 @@
+stateDiagram-v2
+  [*] --> Active
+  Active --> Active : wrong password (attempts < 5)
+  %% @src S2
+  Active --> Locked : 5th failed attempt
+  %% @src S3
+  Active --> SignedIn : valid credentials
+  %% @src S1
+  Locked --> [*]

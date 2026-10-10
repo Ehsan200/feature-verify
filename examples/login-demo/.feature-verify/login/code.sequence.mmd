@@ -1,0 +1,33 @@
+sequenceDiagram
+  actor User
+  box Client
+    participant UI as Login page
+  end
+  box Server
+    participant API as server.js
+    participant Auth as auth.js
+  end
+  User->>UI: Click Sign in
+  %% @ref public/index.html:5#onclick
+  UI->>API: POST /api/login {email, password}
+  %% @ref public/index.html:6#/api/login
+  alt missing fields
+    API-->>UI: 400 missing
+    %% @ref src/server.js:12#missing
+  else
+    API->>Auth: verifyCredentials(email, password)
+    %% @ref src/server.js:13#verifyCredentials
+    alt unknown email
+      Auth-->>API: unknown
+      %% @ref src/services/auth.js:5#unknown
+    else wrong password
+      Auth-->>API: bad-password (failed++)
+      %% @ref src/services/auth.js:7#failed
+    else valid
+      Auth-->>API: token + user
+      %% @ref src/services/auth.js:10#token
+    end
+    API-->>UI: 401 or 200 {token, user}
+    %% @ref src/server.js:14#401
+  end
+  Note over Auth: failed counter is written, never read — no lockout

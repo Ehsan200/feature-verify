@@ -1,0 +1,8 @@
+<!doctype html><html><body>
+<input id="email"><input id="pw" type="password"><button id="go">Sign in</button><div id="msg"></div>
+<script>
+go.onclick = async () => {
+  const r = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: email.value, password: pw.value }) });
+  msg.textContent = r.ok ? 'Welcome' : 'Error ' + r.status;
+};
+</script></body></html>

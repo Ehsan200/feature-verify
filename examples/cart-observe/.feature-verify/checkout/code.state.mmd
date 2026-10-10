@@ -1,0 +1,10 @@
+stateDiagram-v2
+  [*] --> Empty
+  Empty --> HasItems : add item (stock >= qty)
+  %% @ref src/cart.js:9#cart.items
+  HasItems --> HasItems : add item (same check, cart qty ignored)
+  %% @ref src/cart.js:7#stock
+  HasItems --> Empty : checkout (201, stock decremented)
+  %% @ref src/cart.js:22#splice
+  Empty --> Empty : checkout rejected (409 empty-cart)
+  %% @ref src/cart.js:19#empty-cart

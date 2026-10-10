@@ -1,0 +1,219 @@
+---
+name: feature-verify
+description: Understand and verify AI-built features visually, in any web project/stack — by reading the code, not by running or testing it. Discovers what exists, asks which mode, then produces per-feature Mermaid diagrams (sequence, architecture, data model, state) — intended (sourced from the user's own prompts, docs, issues or an interview) and code-derived (every element carries a checked file:line ref) — plus a glossary of non-obvious terms and the feature's risks, validates syntax, checks them mechanically, and renders a local HTML dashboard. Use when the user says "verify feature", "diagram this feature", "feature-verify", or wants to check that what was built matches what was intended. Also use in plan-first mode before building a new feature, and in observe mode when the user only wants to see what the code does ("just show me what it does", "no spec", "as-built") — intent is then skipped and ignored.
+---
+
+# Feature Verify
+
+Goal: a human understands — and, if they want, verifies — a feature by looking at diagrams, without trusting the AI that wrote the code.
+Every element of every diagram must be traceable: intended → a source of intent, code → a line of code.
+
+**This is not a testing tool.** Nothing is run, clicked or recorded. Everything comes from reading the code (and, in verify mode, from the user's intent). The code may behave differently at runtime than it reads; say so plainly when it matters (e.g. config-driven behavior → `UNCERTAIN`), but don't try to execute anything.
+
+## Modes (per feature)
+
+| mode | question it answers | diagrams | compared |
+|---|---|---|---|
+| `verify` | "Did it build what I wanted?" | intended + code | intended vs code |
+| `observe` | "Show me what it does." | code only | — |
+| `plan-first` | "Plan it before it's built." | intended first; code after it's built | as verify |
+
+**Observe mode** is for when the user only wants to see what the code does — no spec, no intent, no judgement against expectations:
+- Skip steps 1–2 entirely. Do not gather intent, do not run `intent.mjs`, do not interview, do not write `intent.json`, `spec.md` or `intended.*.mmd`.
+- Existing intended files and `intent.json` are **ignored** (left on disk untouched; scripts and dashboard skip them).
+- Record the mode in `.feature-verify/<feature>/feature.json` → `{"mode": "observe"}`. Every script reads it.
+- Findings are notes about what the code does (a counter written but never read, an error path that leaks details). Never phrase them as "should" — there is no intent to compare against.
+- Status is `observed` (all diagrams parse, every ref resolves) or `incomplete`.
+
+Never pick the mode yourself: the user chooses it in step 0 (or already chose it — in the request, `feature.json`, or the project default in `.feature-verify/config.json` → `{"defaultMode": "observe"}`). Phrases like "just show me what it does", "what does X actually do", "no spec", "ignore intent", "as-built" count as choosing observe.
+
+## Scripts
+
+They live in the `scripts/` folder next to this SKILL.md — call it `$FV`. Resolve it from this skill's base directory (Claude Code states it when the skill loads; other agents: the directory this file was read from). It differs per install (plugin cache, `~/.claude/skills/feature-verify`, `~/.codex/skills/feature-verify`, a repo checkout); never assume one path. If unsure:
+`ls -d ~/.claude/plugins/cache/*/feature-verify/*/skills/feature-verify/scripts ~/.claude/skills/feature-verify/scripts ~/.codex/skills/feature-verify/scripts 2>/dev/null | head -1`
+
+Plain Node ≥ 18, no dependencies. `validate.mjs` installs `mermaid` into `~/.cache/feature-verify/` on first use (one-time network). Run every command from the target project's root.
+
+| script | does |
+|---|---|
+| `discover.mjs .` | stack, routes/pages/endpoints, schema files, tooling, existing features |
+| `intent.mjs . --grep a,b` | the user's past Claude Code + Codex prompts in this project |
+| `check-refs.mjs <code.*.mmd>` | every code ref resolves; every element has one |
+| `validate.mjs <dir or .mmd>` | real Mermaid parse of every diagram + readability lint |
+| `compare.mjs <feature-dir>` | all mechanical checks as JSON |
+| `dashboard.mjs .feature-verify` | build the dashboard (refuses if any diagram fails to parse) |
+
+## Commands
+
+- `feature-verify` — discover, list features, ask the mode, propose, wait.
+- `feature-verify <feature>` — full flow for one feature (starts at step 0).
+- `feature-verify observe <feature>` — observe mode: code only, intent ignored (steps 0, 3–6).
+- `feature-verify <feature> <step>` — `intent | intended | code | glossary | check | verdict | dashboard`.
+- `feature-verify dashboard` — rebuild the dashboard only.
+
+## Output layout (target project)
+
+```
+.feature-verify/
+  config.json                        optional: {"defaultMode": "observe", "editor": "cursor"}
+  index.html                         dashboard (generated)
+  <feature>/
+    feature.json                     {"mode": "observe"} for observe mode (absent = project default / verify)
+    spec.md                          requirements + acceptance criteria (verify)
+    intent.json                      sources of intent + assumptions (verify)
+    intended.<type>.mmd              from intent sources only — never from code (verify)
+    code.<type>.mmd                  from code; every element has an @ref
+    glossary.json                    plain-language meanings of non-obvious terms
+    compare.json                     mechanical check output
+    report.json                      verdict, findings, risks
+```
+
+`<type>` ∈ `sequence | architecture | data | state`. `<feature>` is kebab-case. Committing `.feature-verify/` is the user's choice (asked in step 0).
+
+## Provenance comments (all diagram files)
+
+Put provenance on a Mermaid comment line **directly after** the element it belongs to (data diagrams: on the line above the entity). Never inside labels — `:`/`#`/`[` inside labels break several diagram grammars.
+
+```
+  API->>Auth: verify(email, password)
+  %% @ref src/api/auth.ts:18#verifyCredentials        ← code diagrams: file:line#symbol
+  API-->>UI: 423 locked
+  %% @src S3                                          ← intended diagrams: source id(s) from intent.json
+  API-->>UI: 400 missing fields
+  %% @assumed A1                                      ← intended diagrams: declared assumption
+```
+
+- `#symbol` must literally appear within ±3 lines of the line (function, route string, table, column, enum value).
+- Elements that need provenance: sequence messages, state transitions (except from/to `[*]`), architecture nodes, data entities (relationships are exempt). Structure lines (`participant`, `alt`, `end`, `box`, `subgraph`…) don't.
+- HTTP calls are written `METHOD /path` in labels (`POST /api/login`); reply labels start with the status code (`401 unauthorized`). Both are matched between intended and code.
+
+## Diagram style guide (diagrams must read well, not just parse)
+
+- **Sequence**: ≤ 8 participants. Group with `box Client … end`, `box Server … end`, `box Data … end`, `box External … end`. Name participants by role (`Login page`, `Auth service`, `Postgres`), alias long names. One action per message, ≤ 50 chars. `alt`/`else` for every branch with the condition in words (`alt account locked (5 failures)`), `opt` for optional steps, `Note over X:` only for notable facts or UNCERTAIN.
+- **Architecture**: `flowchart LR`, ≤ 15 nodes, `subgraph` per layer. Shapes carry meaning, and add the class: UI `id(["Login page"]):::ui`, service `id["Auth service"]:::svc`, store `id[("Postgres users")]:::store`, external `id{{"Stripe"}}:::ext`. Label edges with the protocol/endpoint (`-->|POST /api/login|`). Mark doubt `:::assumed`, a missing intended part `:::gap`.
+- **Data**: `erDiagram`, only entities/fields the feature reads or writes; mark written fields in the attribute comment (`string status "written"`). Real column names.
+- **State**: `stateDiagram-v2`, default top-down direction (no `direction LR` — self-loops render badly). States are nouns (`Locked`), transitions are events (`5th failed attempt`).
+- Quote labels containing `( ) [ ] { } : ;` in flowcharts (`id["auth.js (node:http)"]`). Avoid `;` and `#` in sequence labels.
+- The dashboard supplies colors and classes; do not add `style`/`classDef` lines.
+
+## Step 0 — Discover, ask the mode, propose (always first)
+
+1. `node $FV/discover.mjs .` and skim the repo structure to fill gaps (monorepos, custom routing). Note `featureVerify.defaultMode` and each feature's `mode`.
+2. Look for intent that exists (don't read it deeply yet): `node $FV/intent.mjs . --limit 50` (count of the user's own prompts), README/docs/specs, issues. Only to tell the user what is available.
+3. **Ask the user which mode — always, unless already decided.** It is decided only if (a) the user named it in this request (`observe`, "just show me what it does", "check it against the spec"…), or (b) the feature's `feature.json` or the project's `.feature-verify/config.json` sets it. Otherwise ask, even when intent docs exist — having a spec does not mean the user wants to be judged against it. Use the agent's question tool if it has one (Claude Code: AskUserQuestion), else ask in plain text and wait. Ask it like this, with one concrete example per option drawn from *this* project's feature:
+
+   > How should I look at **<feature>**?
+   > - **Observe** — show what the code does, step by step, with its risks. No spec involved.
+   >   *Example: "Checkout posts to /api/checkout, subtracts stock and returns 201. Stock is checked per click, not against the cart — it can oversell."* (feature-verify repo: `examples/cart-observe`)
+   > - **Verify against intent** — also draw what it *should* do, from <the sources you found: N prompts / docs/SPEC.md / issues / an interview>, and flag every difference.
+   >   *Example: "Spec says lock the account after 5 failed logins (your prompt, 14 Sep). The code never returns 423 — mismatch."* (feature-verify repo: `examples/login-demo`)
+   > - **Plan first** — the feature isn't built yet; draw the intended design for you to check before building.
+
+   If intent docs exist but the user picks Observe, that is final: do not read them for this feature. Also offer to remember the choice: for this feature (`feature.json`) or as the project default (`.feature-verify/config.json` → `{"defaultMode": "observe"}`).
+4. Report briefly, then propose:
+   - **What exists**: stack; user-facing features (group endpoints/pages); which already have diagrams, their mode and status.
+   - **Plan**: feature(s), the chosen mode, diagram types.
+   - **Commit or not**: if `.feature-verify/` is neither ignored nor tracked, ask: `.gitignore`, `.git/info/exclude`, or commit.
+5. **Stop. Wait for confirmation.** Write nothing before it (except `feature.json`/`config.json` if the user asked to remember the mode).
+
+## Step 1 — Gather intent (never from the code) — verify / plan-first only
+
+Intent must be independent of the implementation. Reading the code to decide what was intended makes every bug pass. Collect sources in this order and stop when the feature is covered:
+
+1. **The user's prompts** — `node $FV/intent.mjs . --grep <feature words>`. What the user asked an AI to build is the spec. Cite with `kind: "prompt"`, `file` + `line` from the output, and a short verbatim `quote`.
+2. **Docs** — README, `docs/`, specs, ADRs, CLAUDE.md/AGENTS.md. `kind: "doc"`, file + line + quote.
+3. **Issues / PRs** — `gh issue view`, `gh pr view` when available. `kind: "issue"`, `where: "#12"`, quote.
+4. **Tests written by a human** — `kind: "test"`, file + line + quote. Weak if an AI wrote them; say so.
+5. **Interview** — for gaps, ask the user a few short, concrete questions (happy path, each error, limits, who may do it, what is stored). Batch them in one message. `kind: "interview"`, `where: "user, <date>"`, quote their answer.
+
+Anything still unknown becomes an **assumption** — never silently filled in. Write `intent.json`:
+```json
+{
+  "sources": [
+    {"id": "S1", "kind": "prompt", "tool": "claude", "file": "~/.claude/projects/…/abc.jsonl", "line": 42, "time": "2026-09-14T10:02:00Z", "quote": "lock the account after 5 tries"},
+    {"id": "S2", "kind": "doc", "file": "README.md", "line": 31, "quote": "Users sign in with email and password"},
+    {"id": "S3", "kind": "interview", "where": "user, 2026-10-10", "quote": "Wrong password shows a generic error"}
+  ],
+  "assumptions": [
+    {"id": "A1", "text": "Missing email or password returns 400."}
+  ]
+}
+```
+Quotes are verified mechanically against the cited file/line — copy them exactly. Then write or update `spec.md` from the sources (goal, actors, happy path, errors, acceptance criteria), and show the user the assumptions list. When the user answers one in chat, turn the answer into an `interview` source, re-point the diagram elements from `@assumed A#` to `@src S#`, and drop the assumption.
+
+## Step 2 — Intended diagrams — verify / plan-first only
+
+Write `intended.<type>.mmd` from `intent.json` + `spec.md` only — do not open source code. Every element gets `%% @src S…` or `%% @assumed A…`. Follow the style guide. Run `node $FV/validate.mjs .feature-verify/<feature>` and fix every error.
+
+In plan-first mode, stop here: the user looks at the dashboard (Intent tab + diagrams) and tells you what to change; once they're happy, the diagrams become the build plan.
+
+## Step 3 — Code-derived diagrams
+
+Trace the feature through the actual code: entry (page/route/component) → handlers → services → stores → external APIs → back to UI. Derive from code; don't copy the intended diagrams.
+- Include every branch the code really has: validation, catch blocks, retries, early returns, auth guards. Branches in code but not in intent are exactly what the human must see.
+- Unknown from static reading (dynamic dispatch, config-driven) → `Note over X: UNCERTAIN — reason` or a node `id["UNCERTAIN: …"]:::assumed`. Never guess.
+
+```
+node $FV/check-refs.mjs .feature-verify/<feature>/code.*.mmd
+node $FV/validate.mjs .feature-verify/<feature>
+```
+Fix every failure before continuing.
+
+## Step 4 — Glossary
+
+People reading the diagrams may not know what the code's words mean (`qty`, `cartView`, `failed++`, `bad-qty`). Write `.feature-verify/<feature>/glossary.json`:
+```json
+{ "terms": [
+  { "term": "qty", "aka": ["quantity"], "kind": "field", "meaning": "How many units are being added. The page always sends 1.", "ref": "src/cart.js:6#qty" }
+] }
+```
+- **Only non-obvious terms.** Include: abbreviations, invented or unclear names (functions, fields, modules, error codes, states), and ordinary words that mean something specific *here* (e.g. `stock` that can go negative, a cart shared by everyone). **Skip** things any developer or product person knows: auth, login, password, token, email, user, session, cart, order, checkout, API, endpoint, server, database, HTTP methods, common status codes (200, 201, 404, 500 — the dashboard explains the uncommon ones itself). When unsure whether a reader would know it, leave it out. Typically 3–12 terms per feature.
+- `meaning`: 1–2 plain sentences, no jargon, describing what it is/does **in this codebase** (including surprising behavior). Not a dictionary definition.
+- `ref`: where it's defined or decided, `path:line#symbol` (checked like code refs). Omit only for words that don't exist in code (verify mode, from intent).
+- `kind`: field | function | module | data | error | state | concept. `aka`: other spellings used in the diagrams.
+
+The dashboard turns these into a Concepts tab, chips under each diagram, and tooltips in the element tables.
+
+## Step 5 — Mechanical check and verdict
+
+```
+node $FV/compare.mjs .feature-verify/<feature> > .feature-verify/<feature>/compare.json
+```
+Checks: syntax (real Mermaid parser), code refs, glossary (every term has a meaning, refs resolve) and — in verify mode — intent provenance (every intended element sourced or assumed, quotes verified; open assumptions listed) and HTTP endpoints / status codes between intended and code. Observe mode skips intent and intended diagrams.
+
+Then compare semantically on top of the mechanical output, per type: call order, branches, auth checks, entities/fields written, states and transitions, components touched. Write `report.json`:
+
+```json
+{
+  "feature": "login",
+  "mode": "verify | observe",
+  "status": "verified | partial | mismatch | unverified  (observe: observed | incomplete)",
+  "summary": "one or two sentences a busy reader can act on",
+  "findings": [
+    {"severity": "high|medium|low", "type": "sequence|architecture|data|state", "where": "intended vs code",
+     "text": "Spec: lock account after 5 failed attempts. Code has no lockout branch.", "ref": "src/services/auth.ts:40"}
+  ],
+  "risks": [
+    {"impact": "high|medium|low", "category": "security", "type": "sequence",
+     "text": "Session token is \"tok-\" + user id, so anyone can forge one.", "ref": "src/services/auth.ts:10#tok-"}
+  ],
+  "skipped": {"state": "no lifecycle beyond signed-in/out"},
+  "mechanical": {},
+  "generatedAt": "ISO-8601"
+}
+```
+`findings` vs `risks` — keep them apart:
+- **findings** (dashboard: "Differences" in verify, "Notes" in observe): where intended and code disagree; in observe mode, notable facts about what the code does.
+- **risks**: what could hurt users or the business, judging from the code — *even if intended and code agree*. One pass over what you already traced. Look for: security (auth bypass, forgeable tokens, injection, missing permission checks, secrets), money / stock (double charge, oversell, wrong totals), data loss or integrity (in-memory state, missing transactions, races, partial writes), privacy (data leaks, enumeration, shared state between users), failure handling (unhandled errors, no retries/timeouts on external calls). Rules: specific to this feature, one concrete sentence on what goes wrong and for whom; `ref` required (`path:line#symbol`); `impact` = harm if it happens. No generic advice ("add tests", "use HTTPS", "consider rate limiting" without a concrete failure). Nothing found → `"risks": []` — don't pad. Don't duplicate a risk as a finding.
+
+`mechanical` = the compare.json content. `type` must be set (the dashboard links each item to its diagram).
+Verify mode: `verified` only if compare passes, no open assumptions, no high/medium findings; open assumptions → `partial`; real differences → `mismatch`. Do not soften findings.
+Observe mode: `observed` if compare passes, else `incomplete`. The summary says plainly what the feature does, step by step.
+
+## Step 6 — Dashboard
+
+`node $FV/dashboard.mjs .feature-verify` → `.feature-verify/index.html`. It refuses to build while any diagram fails to parse — fix, don't `--force`. Tell the user the path (`open .feature-verify/index.html` on macOS) and one line per feature: status + top risk + top difference + open assumptions.
+
+## Re-runs
+
+Code changed → steps 3–6 (update the glossary if names changed). Intent changes only with the user (new prompts, docs, or answers).
