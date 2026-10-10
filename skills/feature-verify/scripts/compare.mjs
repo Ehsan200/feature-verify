@@ -5,14 +5,15 @@
 //  - intent: every intended element cites a source (@src) or declared assumption (@assumed); quotes verified
 //  - endpoints / statuses: HTTP calls and status codes agree between intended and code
 //  - glossary: every term has a meaning; its code ref (if any) resolves
-//  - drills: every  %% @drill <flow>  on a sequence message points at an existing <kind>.sequence.<flow>.mmd
+//  - drills: every  %% @drill <flow> | <feature>:<flow>  on a sequence message points at an existing diagram
+//  - size: number of sequence flows; above 12 the feature is likely several features (split.mjs) — a warning, not a failure
 // Observe mode (feature.json {"mode":"observe"}, project default, or --observe): intended diagrams and
 // intent are ignored; only the code diagrams are checked.
 // Exit 1 if anything fails.
 // Usage: node compare.mjs [--observe] .feature-verify/<feature>
 import fs from 'node:fs';
 import path from 'node:path';
-import { extractEndpoints, extractStatuses, diagramType, checkIntent, checkGlossary, checkDrills, loadMode, TYPES } from './lib.mjs';
+import { extractEndpoints, extractStatuses, diagramType, checkIntent, checkGlossary, checkDrills, sequenceFlows, loadMode, TYPES } from './lib.mjs';
 import { checkFiles } from './check-refs.mjs';
 import { validateFiles } from './validate.mjs';
 
@@ -38,6 +39,8 @@ const refs = files.code.length ? checkFiles(files.code) : { checked: 0, failed: 
 const intent = !observe && files.intended.length ? checkIntent(dir) : null;
 const glossary = checkGlossary(dir);
 const drills = checkDrills(dir, observe ? ['code'] : ['intended', 'code']);
+const flowCount = Math.max(...(observe ? ['code'] : ['intended', 'code']).map(k => sequenceFlows(dir, k).size));
+const size = { flows: flowCount, warn: flowCount > 12 ? `${flowCount} sequence flows — probably several features; split with split.mjs` : null };
 
 const result = {
   feature: path.basename(path.resolve(dir)),
@@ -48,6 +51,7 @@ const result = {
   intent,
   glossary,
   drills,
+  size,
   endpoints: observe ? null : {
     intended: sorted(eps.intended), code: sorted(eps.code),
     intendedMissingInCode: minus(eps, 'intended', 'code'),

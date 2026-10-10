@@ -2,21 +2,30 @@
   "feature": "checkout",
   "mode": "observe",
   "status": "observed",
-  "summary": "The shop page loads products and the cart, adds one item per click via POST /api/cart, and checks out via POST /api/checkout, which subtracts stock and records an order. Stock is checked per click, not against what is already in the cart.",
+  "summary": "Checkout rejects an empty cart (409), otherwise subtracts every line from stock without a floor, records the order in memory and empties the cart (201).",
   "findings": [
     {
       "severity": "low",
       "type": "sequence",
       "where": "code",
-      "text": "The page always sends qty 1 for listed products, so the 400 (bad qty) and 404 (unknown product) branches are only reachable by calling the API directly.",
-      "ref": "public/index.html:12"
-    },
-    {
-      "severity": "low",
-      "type": "state",
-      "where": "code",
       "text": "Checkout with an empty cart is rejected with 409 empty-cart; everything else goes straight to an order.",
       "ref": "src/cart.js:19"
+    }
+  ],
+  "risks": [
+    {
+      "impact": "high",
+      "category": "money / stock",
+      "type": "sequence",
+      "text": "Checkout never re-checks stock and subtracts without a floor, so an oversold cart drives stock below zero (Lamp: 1 → −1).",
+      "ref": "src/cart.js:21#stock"
+    },
+    {
+      "impact": "medium",
+      "category": "data loss",
+      "type": "architecture",
+      "text": "Orders exist only in server memory; a restart or crash loses every order.",
+      "ref": "src/store.js:7#orders"
     }
   ],
   "skipped": {},
@@ -27,28 +36,20 @@
       "sequence": {
         "intended": [],
         "code": [
-          "code.sequence.add-to-cart.mmd",
-          "code.sequence.checkout.mmd",
           "code.sequence.mmd"
         ]
       },
       "architecture": {
         "intended": [],
-        "code": [
-          "code.architecture.mmd"
-        ]
+        "code": []
       },
       "data": {
         "intended": [],
-        "code": [
-          "code.data.mmd"
-        ]
+        "code": []
       },
       "state": {
         "intended": [],
-        "code": [
-          "code.state.mmd"
-        ]
+        "code": []
       }
     },
     "syntax": {
@@ -59,7 +60,7 @@
       "unavailable": null
     },
     "refs": {
-      "checked": 32,
+      "checked": 7,
       "failed": [],
       "missing": [],
       "ok": true
@@ -67,51 +68,30 @@
     "intent": null,
     "glossary": {
       "hasGlossary": true,
-      "terms": 8,
+      "terms": 2,
       "failed": [],
       "missingMeaning": [],
       "ok": true
     },
     "drills": {
-      "links": 2,
+      "links": 0,
+      "crossFeature": 0,
       "broken": [],
       "ok": true
+    },
+    "size": {
+      "flows": 1,
+      "warn": null
     },
     "endpoints": null,
     "statuses": {
       "code": [
-        200,
         201,
-        400,
-        404,
         409
       ]
     },
-    "checkedAt": "2026-10-10T11:26:40.607Z",
+    "checkedAt": "2026-10-10T12:31:28.507Z",
     "ok": true
   },
-  "generatedAt": "2026-10-10T10:30:32.682044+00:00",
-  "risks": [
-    {
-      "impact": "high",
-      "category": "money / stock",
-      "type": "sequence",
-      "text": "Overselling: stock is checked per click, not against what is already in the cart, and checkout never re-checks — adding 2 Lamps with 1 in stock succeeds and checkout drives stock to −1.",
-      "ref": "src/cart.js:7#stock"
-    },
-    {
-      "impact": "high",
-      "category": "privacy",
-      "type": "data",
-      "text": "There is one cart for the whole server: every visitor sees, changes and checks out the same cart, including other people's items.",
-      "ref": "src/store.js:6#cart"
-    },
-    {
-      "impact": "medium",
-      "category": "data loss",
-      "type": "architecture",
-      "text": "Orders exist only in server memory; a restart or crash loses every order.",
-      "ref": "src/store.js:7#orders"
-    }
-  ]
+  "generatedAt": "2026-10-10T12:30:00+00:00"
 }

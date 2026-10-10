@@ -12,7 +12,8 @@ export const REF_RE = /\[([^\[\]\s]+?):(\d+)(?:#([^\]\s]+))?\]/g;
 const AT_REF_RE = /@ref\s+([^\s:]+?):(\d+)(?:#(\S+))?(?=\s|$)/g;
 const AT_SRC_RE = /@src\s+([\w,\s-]+)/;
 const AT_ASSUMED_RE = /@assumed\s+([\w,\s-]+)/;
-const AT_DRILL_RE = /@drill\s+([\w-]+)/;
+const AT_DRILL_RE = /@drill\s+([\w-]+(?::[\w-]*)?)/; // <flow> | <feature>:<flow> | <feature>: (its overview)
+const AT_FEATURE_RE = /@feature\s+([\w,\s-]+)/;          // system diagrams: features that use this element
 
 function refsInLine(line, mmdLine) {
   const out = [];
@@ -64,6 +65,7 @@ export function parseDiagram(text, type) {
     const s = t.match(AT_SRC_RE); if (s) el.srcs.push(...s[1].split(/[,\s]+/).filter(Boolean));
     const a = t.match(AT_ASSUMED_RE); if (a) el.assumed.push(...a[1].split(/[,\s]+/).filter(Boolean));
     const d = t.match(AT_DRILL_RE); if (d) el.drill = d[1];
+    const ft = t.match(AT_FEATURE_RE); if (ft) el.features.push(...ft[1].split(/[,\s]+/).filter(Boolean));
   };
   lines.forEach((raw, i) => {
     const t = raw.trim();
@@ -73,7 +75,7 @@ export function parseDiagram(text, type) {
       return;
     }
     if (isElement(t, type)) {
-      cur = { mmdLine: i + 1, text: stripInline(t), refs: refsInLine(t, i + 1), srcs: [], assumed: [], isRelationship: type === 'data' && !/\{\s*$/.test(t) };
+      cur = { mmdLine: i + 1, text: stripInline(t), refs: refsInLine(t, i + 1), srcs: [], assumed: [], features: [], isRelationship: type === 'data' && !/\{\s*$/.test(t) };
       if (!cur.isRelationship) for (const [pt, pi] of pending) attach(cur, pt, pi);
       pending = [];
       elements.push(cur);
@@ -110,17 +112,51 @@ export function missingRefs(text, type) {
   return parseDiagram(text, type).filter(e => !e.refs.length && !e.isRelationship && !/UNCERTAIN/.test(e.text)).map(e => ({ mmdLine: e.mmdLine, text: e.text }));
 }
 
-// Drill-down links: a sequence message followed by  %% @drill <flow>  opens <kind>.sequence.<flow>.mmd
-// (same kind first, else the other kind). Every target must exist.
+// '<flow>' → [null, flow] (this feature); '<feature>:<flow>' → [feature, flow]; '<feature>:' → [feature, ''] (its overview)
+export function parseDrill(target) {
+  const i = target.indexOf(':');
+  return i < 0 ? [null, target] : [target.slice(0, i), target.slice(i + 1)];
+}
+
+// Flows of one diagram type in a dir, per kind: Set of flow names ('' = the main diagram, e.g. code.sequence.mmd).
+export function typeFlows(dir, kind, type = 'sequence') {
+  let names = []; try { names = fs.readdirSync(dir); } catch {}
+  return new Set(names.filter(n => FILE_RE.test(n) && n.startsWith(kind + '.' + type + '.')).map(diagramFlow));
+}
+export const sequenceFlows = (dir, kind) => typeFlows(dir, kind, 'sequence');
+
+// The .feature-verify dir above a feature dir (<fv>/<feature>) or a system dir (<fv>/_system/<group>).
+export function fvRootOf(dir) {
+  let d = path.resolve(dir);
+  while (path.basename(d) !== '.feature-verify' && d !== path.dirname(d)) d = path.dirname(d);
+  return path.basename(d) === '.feature-verify' ? d : path.dirname(path.resolve(dir));
+}
+// System maps, one per group: <fv>/_system/<group>/ — architecture (layered: code.architecture.<module>.mmd),
+// data, and state per entity (code.state.<entity>.mmd). Features without a group belong to group "main".
+export function systemDirs(fv) {
+  const sys = path.join(fv, '_system');
+  try { return fs.readdirSync(sys, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => ({ group: d.name, dir: path.join(sys, d.name) })); } catch { return []; }
+}
+export const isFeatureName = n => !n.startsWith('_') && !n.startsWith('.');
+
+// Drill-down links: an element followed by  %% @drill <flow>  opens <kind>.<same type>.<flow>.mmd in the same dir
+// (sequence message → deeper flow; system architecture node → that module's inner diagram);
+// %% @drill <feature>:<flow>  opens that feature's sequence flow (shared flows; a system state transition → the
+// feature flow that causes it). Every target must exist.
 export function checkDrills(dir, kinds = ['intended', 'code']) {
   const names = fs.readdirSync(dir).filter(n => FILE_RE.test(n));
-  const flows = k => new Set(names.filter(n => n.startsWith(k + '.sequence.')).map(diagramFlow));
-  const res = { links: 0, broken: [] };
-  for (const n of names.filter(n => diagramType(n) === 'sequence' && kinds.some(k => n.startsWith(k + '.')))) {
-    for (const e of parseDiagram(fs.readFileSync(path.join(dir, n), 'utf8'), 'sequence')) {
+  const fv = fvRootOf(dir);
+  const flows = (k, feature, type) => feature ? sequenceFlows(path.join(fv, feature), k) : typeFlows(dir, k, type);
+  const res = { links: 0, crossFeature: 0, broken: [] };
+  for (const n of names.filter(n => kinds.some(k => n.startsWith(k + '.')))) {
+    const type = diagramType(n);
+    for (const e of parseDiagram(fs.readFileSync(path.join(dir, n), 'utf8'), type)) {
       if (!e.drill) continue;
       res.links++;
-      if (!kinds.some(k => flows(k).has(e.drill))) res.broken.push({ diagram: n, mmdLine: e.mmdLine, drill: e.drill, reason: `no ${n.split('.')[0]}.sequence.${e.drill}.mmd` });
+      const [feature, flow] = parseDrill(e.drill);
+      if (feature) res.crossFeature++;
+      const file = `${feature ? feature + '/' : ''}${n.split('.')[0]}.${feature ? 'sequence' : type}${flow ? '.' + flow : ''}.mmd`;
+      if (!kinds.some(k => flows(k, feature, type).has(flow))) res.broken.push({ diagram: n, mmdLine: e.mmdLine, drill: e.drill, reason: `no ${file}` });
     }
   }
   res.ok = !res.broken.length;
@@ -167,10 +203,15 @@ export function checkSource(src, root = process.cwd()) {
 // Feature mode: 'verify' (intended vs code) or 'observe' (code only; intent ignored).
 // Per feature: <feature-dir>/feature.json {"mode": "observe"|"verify"}.
 // Project default: .feature-verify/config.json {"defaultMode": "observe"} — applies to features without their own mode.
+// Sidebar group of a feature: feature.json {"group": "neo"} (features of one product area, split from one big one).
+export function loadGroup(dir) {
+  try { return JSON.parse(fs.readFileSync(path.join(dir, 'feature.json'), 'utf8')).group || null; } catch { return null; }
+}
+
 export function loadMode(dir) {
   const read = f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
   const own = read(path.join(dir, 'feature.json'))?.mode;
-  const mode = own || read(path.join(dir, '..', 'config.json'))?.defaultMode;
+  const mode = own || read(path.join(fvRootOf(dir), 'config.json'))?.defaultMode;
   return mode === 'observe' ? 'observe' : 'verify';
 }
 

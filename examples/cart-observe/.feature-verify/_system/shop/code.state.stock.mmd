@@ -1,0 +1,15 @@
+stateDiagram-v2
+  [*] --> Available
+  Available --> Available : checkout takes some
+  %% @ref src/cart.js:21#stock
+  %% @drill checkout:
+  Available --> Zero : checkout takes the rest
+  %% @ref src/cart.js:21#stock
+  %% @drill checkout:
+  Available --> Negative : checkout takes more than left
+  %% @ref src/cart.js:21#stock
+  %% @drill checkout:
+  Zero --> Negative : checkout of items added earlier
+  %% @ref src/cart.js:21#stock
+  %% @drill checkout:
+  note right of Negative : oversold — add-to-cart checks stock per click only

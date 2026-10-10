@@ -44,6 +44,7 @@ Plain Node ≥ 18, no dependencies. `validate.mjs` installs `mermaid` into `~/.c
 | `dashboard.mjs .feature-verify` | build the dashboard (refuses if any diagram fails to parse) |
 | `stale.mjs record <feature-dir>` | snapshot the code every ref points at → `basis.json` (git; each file in its own repo) |
 | `stale.mjs .feature-verify` | has the code changed since? per ref: fresh · moved (new line) · changed · gone |
+| `split.mjs .feature-verify/<from> <to> <flow>… [--overview <flow>] [--group g]` | move flows into another feature; re-points every `@drill` |
 
 ## Commands
 
@@ -59,8 +60,14 @@ Plain Node ≥ 18, no dependencies. `validate.mjs` installs `mermaid` into `~/.c
 .feature-verify/
   config.json                        optional: {"defaultMode": "observe", "editor": "cursor"}
   index.html                         dashboard (generated)
+  _system/<group>/                   the system map of a group ("main" for features without one) — see "System map"
+    code.architecture.mmd            top level: modules/services/stores/externals (≤ 15 nodes)
+    code.architecture.<module>.mmd   inside one module (a top-level node with %% @drill <module> opens it)
+    code.data.mmd                    entities + relations (code.data.<area>.mmd if it gets big)
+    code.state.<entity>.mmd          lifecycle of one main record (ai-report, booking, payment…)
+    basis.json, glossary.json        as for features
   <feature>/
-    feature.json                     {"mode": "observe"} for observe mode (absent = project default / verify)
+    feature.json                     {"mode": "observe", "group": "neo"} — mode (absent = project default / verify); group = sidebar section
     spec.md                          requirements + acceptance criteria (verify)
     intent.json                      sources of intent + assumptions (verify)
     intended.<type>.mmd              from intent sources only — never from code (verify)
@@ -89,7 +96,7 @@ Put provenance on a Mermaid comment line **directly after** the element it belon
 
 - `#symbol` must literally appear within ±3 lines of the line (function, route string, table, column, enum value).
 - Elements that need provenance: sequence messages, state transitions (except from/to `[*]`), architecture nodes, data entities (relationships are exempt). Structure lines (`participant`, `alt`, `end`, `box`, `subgraph`…) don't.
-- **Drill-down** (sequence): put `%% @drill <flow>` on its own comment line after a message (next to its `@ref`) to link it to `<kind>.sequence.<flow>.mmd`. In the dashboard that step shows ⤵ and opens the flow on click; a breadcrumb leads back. Every target must exist (`compare.mjs` checks).
+- **Drill-down** (sequence): put `%% @drill <flow>` on its own comment line after a message (next to its `@ref`) to link it to `<kind>.sequence.<flow>.mmd`. `%% @drill <feature>:<flow>` links to another feature's flow, `%% @drill <feature>:` to its overview — use it for shared steps (payment, login) instead of drawing them twice. In the dashboard that step shows ⤵ and opens on click; the sidebar shows the flows as a tree; a breadcrumb leads back. Every target must exist (`compare.mjs` checks).
 - HTTP calls are written `METHOD /path` in labels (`POST /api/login`); reply labels start with the status code (`401 unauthorized`). Both are matched between intended and code.
 
 ## Diagram style guide (diagrams must read well, not just parse)
@@ -104,6 +111,24 @@ Put provenance on a Mermaid comment line **directly after** the element it belon
 - **State**: `stateDiagram-v2`, default top-down direction (no `direction LR` — self-loops render badly). States are nouns (`Locked`), transitions are events (`5th failed attempt`).
 - Quote labels containing `( ) [ ] { } : ;` in flowcharts (`id["auth.js (node:http)"]`). Avoid `;` and `#` in sequence labels.
 - The dashboard supplies colors and classes; do not add `style`/`classDef` lines.
+
+## What is one feature
+
+**One feature = one user goal** that someone could describe in a sentence: "sign in with phone", "book a session", "buy an AI report", "pay". Not a product area, not the whole app. Guide: **≤ 8 sequence flows** per feature; `compare.mjs` warns above 12 (`size.warn`).
+- A request covering several goals ("the neo funnel", "ai report and booking") → propose one feature per goal, all with the same `"group"` in `feature.json` so the sidebar keeps them together (e.g. group `neo`: `phone-login`, `browse-offers`, `booking`, `ai-report`, `payments`).
+- Steps several features share (payment, login, notifications) → their own feature; the others link with `@drill payments:verify-transaction`.
+- An existing feature that is too big → propose the split, then move flows with `node $FV/split.mjs .feature-verify/<big> <new> <flow>… --overview <flow> --group <g>` (`--dry-run` first). It moves the diagrams and re-points every `@drill`; then move the glossary terms and risks that belong to the new feature and redo steps 5–6 + `stale.mjs record` for both.
+
+## System map (per group)
+
+Features are stories (sequences). To understand the **system** they run through, each group has one system map in `.feature-verify/_system/<group>/` — architecture, data and state drawn **once**, not per feature. The dashboard shows it as "System map" at the top of the group, and every feature's Architecture / Data / State tab shows the system map with **that feature's parts highlighted** and the rest dimmed. A feature draws its own architecture/data/state only when it needs more detail than the map (then both are shown).
+
+- **Architecture, layered**: `code.architecture.mmd` holds the modules (≤ 15 nodes); a module node with `%% @drill <module>` opens `code.architecture.<module>.mmd` with its inner parts. Same style rules as feature architecture.
+- **Data**: entities and relations of the whole group; real names.
+- **State**: one `code.state.<entity>.mmd` per main record. Put `%% @drill <feature>:<flow>` on a transition to say which feature flow causes it — the label becomes a link, and the lifecycle shows how features connect over time.
+- Every element has an `@ref` like any code diagram. Which features use an element is **computed** (same file for architecture; ref within ±3 lines or a drill for state; entity name or nearby ref for data). Add `%% @feature a, b` only where the code can't show it (e.g. a queue consumer).
+- Check it like a feature: `compare.mjs .feature-verify/_system/<group>`, `stale.mjs record .feature-verify/_system/<group>`.
+- When: draw it when a group has ≥ 2 features or the user wants to understand the system; update it when a feature adds a module, entity or state. An umbrella feature that holds whole-group architecture/data/state (e.g. from before a split) → move those files to `_system/<group>/`.
 
 ## Step 0 — Discover, ask the mode, propose (always first)
 
@@ -121,7 +146,7 @@ Put provenance on a Mermaid comment line **directly after** the element it belon
    If intent docs exist but the user picks Observe, that is final: do not read them for this feature. Also offer to remember the choice: for this feature (`feature.json`) or as the project default (`.feature-verify/config.json` → `{"defaultMode": "observe"}`).
 4. Report briefly, then propose:
    - **What exists**: stack; user-facing features (group endpoints/pages); which already have diagrams, their mode, status, and whether their code changed since.
-   - **Plan**: feature(s), the chosen mode, diagram types.
+   - **Plan**: feature(s) — split by user goal (see "What is one feature"), with their group — the chosen mode, diagram types, and the group's system map (`featureVerify.systems` from discover: missing or stale?). Existing features over the size guide: propose a split.
    - **Commit or not**: if `.feature-verify/` is neither ignored nor tracked, ask: `.gitignore`, `.git/info/exclude`, or commit.
 5. **Stop. Wait for confirmation.** Write nothing before it (except `feature.json`/`config.json` if the user asked to remember the mode).
 

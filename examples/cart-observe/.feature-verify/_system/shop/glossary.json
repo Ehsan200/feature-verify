@@ -1,0 +1,1 @@
+{ "terms": [ { "term": "store.js", "aka": ["in-memory", "memory"], "kind": "module", "meaning": "Where all data lives: plain lists in the server memory, not a database. Restarting the server erases everything.", "ref": "src/store.js:1#In-memory" } ] }

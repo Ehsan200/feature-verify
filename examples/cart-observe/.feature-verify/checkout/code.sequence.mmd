@@ -1,22 +1,26 @@
 sequenceDiagram
-  actor Shopper
   box Client
     participant UI as Shop page
   end
   box Server
     participant API as server.js
+    participant Cart as cart.js
+    participant Store as store.js (memory)
   end
-  UI->>API: GET /api/products
-  %% @ref public/index.html:6#/api/products
-  API-->>UI: 200 products incl. stock
-  %% @ref src/server.js:12#products
-  UI->>API: GET /api/cart
-  %% @ref public/index.html:8#/api/cart
-  API-->>UI: 200 {lines, total}
-  %% @ref src/server.js:13#cartView
-  Shopper->>UI: Click Add
-  %% @ref public/index.html:10#onclick
-  %% @drill add-to-cart
-  Shopper->>UI: Click Checkout
-  %% @ref public/index.html:16#checkout
-  %% @drill checkout
+  UI->>API: POST /api/checkout
+  %% @ref public/index.html:17#/api/checkout
+  API->>Cart: checkout()
+  %% @ref src/server.js:20#checkout
+  alt cart empty
+    Cart-->>API: 409 empty-cart
+    %% @ref src/cart.js:19#empty-cart
+  else
+    Cart->>Store: stock -= qty for every line (no floor)
+    %% @ref src/cart.js:21#stock
+    Cart->>Store: push order, empty cart
+    %% @ref src/cart.js:23#orders.push
+    Cart-->>API: 201 {orderId, total}
+    %% @ref src/cart.js:24#orderId
+  end
+  API-->>UI: same status + body
+  %% @ref src/server.js:21#send

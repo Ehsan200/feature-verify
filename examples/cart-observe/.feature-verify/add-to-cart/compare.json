@@ -1,0 +1,67 @@
+{
+  "feature": "add-to-cart",
+  "mode": "observe",
+  "coverage": {
+    "sequence": {
+      "intended": [],
+      "code": [
+        "code.sequence.add-item.mmd",
+        "code.sequence.mmd"
+      ]
+    },
+    "architecture": {
+      "intended": [],
+      "code": []
+    },
+    "data": {
+      "intended": [],
+      "code": []
+    },
+    "state": {
+      "intended": [],
+      "code": []
+    }
+  },
+  "syntax": {
+    "ok": true,
+    "parser": "mermaid@11.4.1",
+    "errors": [],
+    "warnings": [],
+    "unavailable": null
+  },
+  "refs": {
+    "checked": 9,
+    "failed": [],
+    "missing": [],
+    "ok": true
+  },
+  "intent": null,
+  "glossary": {
+    "hasGlossary": true,
+    "terms": 5,
+    "failed": [],
+    "missingMeaning": [],
+    "ok": true
+  },
+  "drills": {
+    "links": 1,
+    "crossFeature": 0,
+    "broken": [],
+    "ok": true
+  },
+  "size": {
+    "flows": 2,
+    "warn": null
+  },
+  "endpoints": null,
+  "statuses": {
+    "code": [
+      200,
+      400,
+      404,
+      409
+    ]
+  },
+  "checkedAt": "2026-10-10T12:31:28.159Z",
+  "ok": true
+}

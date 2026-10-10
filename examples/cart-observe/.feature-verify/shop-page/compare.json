@@ -1,0 +1,63 @@
+{
+  "feature": "shop-page",
+  "mode": "observe",
+  "coverage": {
+    "sequence": {
+      "intended": [],
+      "code": [
+        "code.sequence.mmd"
+      ]
+    },
+    "architecture": {
+      "intended": [],
+      "code": []
+    },
+    "data": {
+      "intended": [],
+      "code": []
+    },
+    "state": {
+      "intended": [],
+      "code": []
+    }
+  },
+  "syntax": {
+    "ok": true,
+    "parser": "mermaid@11.4.1",
+    "errors": [],
+    "warnings": [],
+    "unavailable": null
+  },
+  "refs": {
+    "checked": 6,
+    "failed": [],
+    "missing": [],
+    "ok": true
+  },
+  "intent": null,
+  "glossary": {
+    "hasGlossary": true,
+    "terms": 1,
+    "failed": [],
+    "missingMeaning": [],
+    "ok": true
+  },
+  "drills": {
+    "links": 2,
+    "crossFeature": 2,
+    "broken": [],
+    "ok": true
+  },
+  "size": {
+    "flows": 1,
+    "warn": null
+  },
+  "endpoints": null,
+  "statuses": {
+    "code": [
+      200
+    ]
+  },
+  "checkedAt": "2026-10-10T12:31:27.839Z",
+  "ok": true
+}

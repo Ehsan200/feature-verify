@@ -1,0 +1,129 @@
+{
+  "recordedAt": "2026-10-10T12:31:28.374Z",
+  "files": {
+    "src/cart.js": {
+      "blob": "e8f7868ccff24d3dc22cb2992d30eebe83bd24b9",
+      "repo": "../..",
+      "commit": "dbbab314900b08967bba6f3c23d2325d4a967fc8"
+    },
+    "public/index.html": {
+      "blob": "9b6c37bc098c4847823bbbd4a0423017f03af2cd",
+      "repo": "../..",
+      "commit": "dbbab314900b08967bba6f3c23d2325d4a967fc8"
+    },
+    "src/server.js": {
+      "blob": "ddd1c5c1a2bc2ecd925feae10d01d98ee209d0eb",
+      "repo": "../..",
+      "commit": "dbbab314900b08967bba6f3c23d2325d4a967fc8"
+    },
+    "src/store.js": {
+      "blob": "c36ee062e20fae359b2c5fab4b1e451aad7330db",
+      "repo": "../..",
+      "commit": "dbbab314900b08967bba6f3c23d2325d4a967fc8"
+    }
+  },
+  "refs": [
+    {
+      "file": "src/cart.js",
+      "line": 3,
+      "symbol": "addItem",
+      "from": "code.sequence.add-item.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 5,
+      "symbol": "no-such-product",
+      "from": "code.sequence.add-item.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 6,
+      "symbol": "bad-qty",
+      "from": "code.sequence.add-item.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 7,
+      "symbol": "out-of-stock",
+      "from": "code.sequence.add-item.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 9,
+      "symbol": "cart.items",
+      "from": "code.sequence.add-item.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 10,
+      "symbol": "cartView",
+      "from": "code.sequence.add-item.mmd"
+    },
+    {
+      "file": "public/index.html",
+      "line": 12,
+      "symbol": "/api/cart",
+      "from": "code.sequence.mmd"
+    },
+    {
+      "file": "src/server.js",
+      "line": 16,
+      "symbol": "addItem",
+      "from": "code.sequence.mmd"
+    },
+    {
+      "file": "src/server.js",
+      "line": 17,
+      "symbol": "send",
+      "from": "code.sequence.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 6,
+      "symbol": "qty",
+      "from": "glossary.json"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 3,
+      "symbol": "addItem",
+      "from": "glossary.json"
+    },
+    {
+      "file": "src/store.js",
+      "line": 6,
+      "symbol": "cart",
+      "from": "glossary.json"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 7,
+      "symbol": "out-of-stock",
+      "from": "glossary.json"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 6,
+      "symbol": "bad-qty",
+      "from": "glossary.json"
+    },
+    {
+      "file": "public/index.html",
+      "line": 12,
+      "symbol": null,
+      "from": "report.json"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 7,
+      "symbol": "stock",
+      "from": "report.json"
+    },
+    {
+      "file": "src/store.js",
+      "line": 6,
+      "symbol": "cart",
+      "from": "report.json"
+    }
+  ]
+}

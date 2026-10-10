@@ -6,8 +6,9 @@ flowchart LR
   subgraph Server
     srv["server.js router (node:http)"]:::svc
     %% @ref src/server.js:10#createServer
-    cart["cart.js addItem / checkout"]:::svc
-    %% @ref src/cart.js:3#addItem
+    cart["cart.js — cart rules"]:::svc
+    %% @ref src/cart.js:1#store.js
+    %% @drill cart
   end
   subgraph Data
     mem[("store.js in-memory products, cart, orders")]:::store

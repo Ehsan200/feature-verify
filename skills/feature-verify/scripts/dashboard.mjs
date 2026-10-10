@@ -6,7 +6,7 @@
 // Usage: node dashboard.mjs [.feature-verify] [--force]
 import fs from 'node:fs';
 import path from 'node:path';
-import { TYPES, parseDiagram, diagramFlow, stripInline, loadIntent, loadMode, loadGlossary } from './lib.mjs';
+import { TYPES, parseDiagram, diagramFlow, stripInline, loadIntent, loadMode, loadGroup, loadGlossary, systemDirs, isFeatureName, parseDrill } from './lib.mjs';
 import { check as checkStale } from './stale.mjs';
 import { validateFiles, collectMmd, MERMAID_VERSION } from './validate.mjs';
 
@@ -38,9 +38,10 @@ const resolveRef = (ref, featureDir) => {
 };
 
 const features = [];
-for (const d of fs.readdirSync(dir, { withFileTypes: true }).filter(d => d.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
-  const fd = path.join(dir, d.name);
-  const mode = loadMode(fd);
+// One feature dir, or a system map dir (<fv>/_system/<group>, shown as the pseudo-feature "@<group>").
+function loadFeature(fd, name, sys) {
+  const d = { name };
+  const mode = sys ? 'observe' : loadMode(fd);
   const names = fs.readdirSync(fd);
   const stale = fs.existsSync(path.join(fd, 'basis.json')) ? checkStale(fd) : null;
   const staleRef = new Map((stale?.refs || []).map(r => [r.from + '|' + r.file + '|' + r.line, { status: r.status, newLine: r.newLine || null }]));
@@ -52,7 +53,7 @@ for (const d of fs.readdirSync(dir, { withFileTypes: true }).filter(d => d.isDir
       const raw = fs.readFileSync(full, 'utf8');
       const err = invalid.get(full);
       const elements = parseDiagram(raw, t).map(e => ({
-        text: e.text, srcs: e.srcs, assumed: e.assumed, rel: !!e.isRelationship, mmdLine: e.mmdLine, drill: e.drill || null,
+        text: e.text, srcs: e.srcs, assumed: e.assumed, rel: !!e.isRelationship, mmdLine: e.mmdLine, drill: e.drill || null, features: e.features,
         refs: e.refs.map(r => ({ file: r.file, line: r.line, symbol: r.symbol, abs: path.resolve(projectRoot, r.file), stale: staleRef.get(n + '|' + path.relative(projectRoot, path.resolve(projectRoot, r.file)) + '|' + r.line) || null })),
       }));
       return { name: n, label: kind, flow: diagramFlow(n), src: stripInline(raw), elements, error: err ? { line: err.line, message: err.message, sourceLine: err.sourceLine } : null };
@@ -75,8 +76,70 @@ for (const d of fs.readdirSync(dir, { withFileTypes: true }).filter(d => d.isDir
     const glossary = (loadGlossary(fd)?.terms || []).filter(t => t.term && t.meaning).map(t => ({ ...t, link: resolveRef(String(t.ref || '').split('#')[0]) }));
     if (stale?.state === 'outdated') console.error(`warning: ${d.name}: code changed since its diagrams were made (${stale.counts.changed} changed, ${stale.counts.gone} gone) — node stale.mjs ${path.relative(process.cwd(), fd)}`);
     if (stale) for (const r of stale.refs) { const l = resolveRef(r.file + ':' + (r.newLine || r.line)); if (l) r.link = l; }
-    features.push({ name: d.name, mode, glossary, diagrams, report, checks, stale, spec: mode === 'observe' ? null : spec, intent: mode === 'observe' ? null : loadIntent(fd) });
+    return { name: d.name, group: sys ? sys.group : loadGroup(fd), system: !!sys, mode, glossary, diagrams, report, checks, stale, spec: mode === 'observe' ? null : spec, intent: mode === 'observe' ? null : loadIntent(fd) };
   }
+  return null;
+}
+for (const d of fs.readdirSync(dir, { withFileTypes: true }).filter(d => d.isDirectory() && isFeatureName(d.name)).sort((a, b) => a.name.localeCompare(b.name))) {
+  const f = loadFeature(path.join(dir, d.name), d.name, null);
+  if (f) features.push(f);
+}
+
+// ---- system maps: which features use each element
+// A feature uses a system element when they point at the same code (architecture: same file; state: a ref within
+// ±3 lines, or the transition drills into that feature), when an entity's name appears in the feature's diagrams
+// (data), or when the element says so (%% @feature a, b). Module nodes inherit their inner diagram's users.
+const norm = p => path.relative(projectRoot, path.resolve(projectRoot, p));
+const words = text => {
+  const toks = (text.match(/[A-Za-z][A-Za-z0-9_]*/g) || []).map(w => w.toLowerCase().replace(/_/g, ''));
+  const set = new Set(toks); toks.forEach((w, i) => { if (toks[i + 1]) set.add(w + toks[i + 1]); });
+  for (const w of [...set]) if (w.endsWith('s')) set.add(w.slice(0, -1));
+  return set;
+};
+for (const { group, dir: sd } of systemDirs(dir)) {
+  const sys = loadFeature(sd, '@' + group, { group });
+  if (!sys) continue;
+  const members = features.filter(f => (f.group || 'main') === group);
+  const idx = members.map(f => {
+    const dgs = Object.values(f.diagrams).flatMap(t => t.code);
+    const refs = dgs.flatMap(dg => dg.elements.flatMap(e => e.refs)).concat((f.glossary || []).map(t => String(t.ref || '').match(/^([^\s:]+?):(\d+)/)).filter(Boolean).map(m => ({ file: m[1], line: +m[2] })));
+    const files = new Set(refs.map(r => norm(r.file)));
+    return { name: f.name, files, refs: refs.map(r => ({ file: norm(r.file), line: r.line })), words: words(dgs.map(dg => dg.src).join('\n') + ' ' + (f.glossary || []).map(t => [t.term, ...(t.aka || [])].join(' ')).join(' ')) };
+  });
+  const near = (x, r, w) => x.refs.some(q => q.file === norm(r.file) && Math.abs(q.line - r.line) <= w);
+  // Architecture: one node per file → the whole file is that node. Several nodes in one file (functions of a module)
+  // → a feature line belongs to the node whose ref is the nearest at or above it.
+  // Data: the same nearest-above rule within a few lines, no whole-file fallback (entities often share one file).
+  const owns = (dg, e, r, x, data) => {
+    const file = norm(r.file);
+    const marks = dg.elements.flatMap(el => el.refs.filter(q => norm(q.file) === file).map(q => ({ el, line: q.line }))).sort((a, b) => a.line - b.line);
+    if (marks.length < 2 && !data) return x.files.has(file);
+    return x.refs.some(q => { if (q.file !== file) return false; const m = marks.filter(m => m.line <= q.line).pop() || (data ? null : marks[0]); return m?.el === e && (!data || q.line - m.line <= 10); });
+  };
+  for (const t of ['architecture', 'data', 'state']) {
+    for (const dg of sys.diagrams[t]?.code || []) for (const e of dg.elements) {
+      const by = new Set(e.features.filter(n => members.some(m => m.name === n)));
+      if (e.drill) { const [ft] = parseDrill(e.drill); if (ft && members.some(m => m.name === ft)) by.add(ft); }
+      for (const x of idx) {
+        if (t === 'architecture' && e.refs.some(r => owns(dg, e, r, x))) by.add(x.name);
+        if (t === 'state' && e.refs.some(r => near(x, r, 3))) by.add(x.name);
+        if (t === 'data' && !e.rel) {
+          const ent = (e.text.match(/^([A-Za-z_][\w-]*)/) || [])[1];
+          if ((ent && x.words.has(ent.toLowerCase().replace(/[_-]/g, ''))) || e.refs.some(r => owns(dg, e, r, x, true))) by.add(x.name);
+        }
+      }
+      e.usedBy = [...by].sort();
+    }
+  }
+  // module nodes (architecture @drill <module>) are used by whoever uses their inner diagram
+  const arch = sys.diagrams.architecture?.code || [];
+  for (let pass = 0; pass < 5; pass++) for (const dg of arch) for (const e of dg.elements) {
+    if (!e.drill || parseDrill(e.drill)[0]) continue;
+    const inner = arch.find(x => x.flow === e.drill);
+    if (inner) e.usedBy = [...new Set([...e.usedBy, ...inner.elements.flatMap(x => x.usedBy || [])])].sort();
+  }
+  for (const f of members) f.systemMap = sys.name;
+  features.push(sys);
 }
 
 const data = JSON.stringify({
@@ -140,6 +203,21 @@ aside { border-right:1px solid var(--line); background:var(--panel); position:st
 .fitem[aria-current="true"] { background:var(--accent-soft); }
 .fitem .n { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:550; }
 .fitem .n .appr { display:block; font-weight:400; }
+.ghead { display:flex; align-items:center; gap:4px; width:100%; background:none; border:0; padding:8px 6px 4px; cursor:pointer; color:var(--muted); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; text-align:left; }
+.ghead .appr { font-weight:500; }
+.fgroup .fitem.ingroup { padding-left:18px; }
+.ftree, .ftree ul { list-style:none; margin:0; padding:0; }
+.ftree { margin:2px 0 8px 14px; border-left:1px solid var(--line); }
+.trow { display:flex; align-items:center; min-width:0; }
+.tw { flex:none; width:18px; height:24px; display:inline-grid; place-items:center; background:none; border:0; padding:0; color:var(--muted); font-size:14px; line-height:1; cursor:pointer; border-radius:4px; }
+.tw:hover { background:var(--sunken); }
+span.tw { cursor:default; }
+.tnode { flex:1; min-width:0; text-align:left; background:none; border:0; padding:3px 6px; border-radius:6px; cursor:pointer; font-size:13px; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tnode:hover { background:var(--sunken); }
+.tnode[aria-current="true"] { background:var(--accent-soft); color:var(--accent); font-weight:600; }
+.tnode.cross { color:var(--muted); font-style:italic; }
+.ftree .tlabel { font-size:11px; color:var(--faint); padding:8px 8px 2px; text-transform:uppercase; letter-spacing:.04em; }
+a.mono, .linkbtn.mono { overflow-wrap:anywhere; }
 .dot { width:9px; height:9px; border-radius:50%; flex:none; background:var(--faint); }
 .dot.verified { background:var(--ok); } .dot.partial, .dot.incomplete { background:var(--warn); } .dot.mismatch { background:var(--bad); } .dot.observed { background:var(--accent); }
 .appr { font-size:11px; color:var(--muted); }
@@ -277,6 +355,29 @@ abbr.term { text-decoration:underline dotted var(--muted); text-underline-offset
 .stage line.fv-drill, .stage path.fv-drill { stroke:var(--accent) !important; }
 .stage .fv-hit.fv-hit { stroke:transparent !important; stroke-width:16px !important; fill:none !important; pointer-events:stroke; cursor:pointer; }
 .tag.stale { background:var(--warn-soft); color:var(--warn); }
+.fitem.sysitem .n { font-weight:600; }
+.sysicon { flex:none; width:16px; height:16px; border-radius:4px; border:1.5px solid var(--accent); display:grid; place-items:center; font-size:9px; color:var(--accent); }
+.hlpick { font-size:13px; color:var(--muted); display:inline-flex; gap:6px; align-items:center; }
+.hlpick select { font:inherit; font-size:13px; color:var(--text); background:var(--sunken); border:1px solid var(--line); border-radius:7px; padding:4px 6px; }
+.toolleft { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+.stage g.fv-drill-node { cursor:pointer; }
+.stage g.fv-drill-node > rect, .stage g.fv-drill-node > path, .stage g.fv-drill-node > polygon, .stage g.fv-drill-node > circle { stroke:var(--accent) !important; stroke-width:2.5px !important; }
+.stage .edgeLabel.fv-drill { cursor:pointer; }
+.stage .edgeLabel.fv-drill span, .stage .edgeLabel.fv-drill p { color:var(--accent) !important; text-decoration:underline; }
+.stage g.fv-off { opacity:.22; }
+.stage g.fv-on > rect, .stage g.fv-on > path { stroke:var(--accent) !important; stroke-width:2.5px !important; }
+tr.hlrow td { background:var(--accent-soft); }
+.panes.fs { position:fixed; inset:0; z-index:50; background:var(--bg); padding:12px; margin:0; }
+.panes.fs .canvas { height:calc(100vh - 66px) !important; }
+.panes .fsclose { display:none; }
+.panes.fs .fsclose { display:block; position:fixed; bottom:22px; right:24px; z-index:51; box-shadow:var(--shadow); }
+body.noscroll { overflow:hidden; }
+.usedby { display:flex; flex-wrap:wrap; gap:4px; }
+.usedby .chip { font-size:11px; padding:1px 7px; }
+.uses { list-style:none; margin:0; padding:0 8px 10px; }
+.uses li { display:grid; grid-template-columns:110px minmax(0,1fr); gap:10px; padding:9px 8px; border-top:1px solid var(--line); align-items:start; }
+.uses li:first-child { border-top:0; }
+.uses .k { font-weight:600; font-size:13px; }
 .tag.stale.bad { background:var(--bad-soft); color:var(--bad); }
 .pill.stale { cursor:pointer; border:0; }
 details.moved > summary { cursor:pointer; padding:4px 16px 12px; font-size:12px; color:var(--muted); }
@@ -298,7 +399,7 @@ details.moved > summary { cursor:pointer; padding:4px 16px 12px; font-size:12px;
 <div class="app">
   <aside>
     <div class="brand"><div class="title">Feature Verify</div><div class="sub" id="proj"></div></div>
-    <div class="search"><input id="q" type="search" placeholder="Filter features" aria-label="Filter features"></div>
+    <div class="search"><input id="q" type="search" placeholder="Filter features and diagrams" aria-label="Filter features and diagrams"></div>
     <div class="filters" id="filters"></div>
     <nav class="flist" id="flist" aria-label="Features"></nav>
     <div class="sidefoot"><span class="opts"><select id="editor" aria-label="Open files in" title="Open code links in"></select><button class="iconbtn" id="theme" title="Theme">Auto</button></span><span id="gen"></span></div>
@@ -337,11 +438,13 @@ const edSel = document.getElementById('editor');
 for (const [k, [label]] of Object.entries(EDITORS)) edSel.append(h('option', { value: k, selected: k === editor }, 'Open in ' + label));
 edSel.addEventListener('change', e => { editor = e.target.value; store.set('fv-editor', editor); route(); });
 // A link to file:line in the chosen editor (or a copy-to-clipboard button).
-function fileLink(abs, line, text) {
+const shortPath = t => { const p = String(t).split('/'); return t.length <= 44 || p.length <= 3 ? t : p[0] + '/…/' + p.slice(-2).join('/'); };
+function fileLink(abs, line, full) {
+  const text = shortPath(full);
   const make = EDITORS[editor][1];
   if (!make) return h('button', { class: 'linkbtn mono', title: 'Copy ' + abs + ':' + line, onclick: e => { navigator.clipboard?.writeText(abs + ':' + line); const t = e.target; const o = t.textContent; t.textContent = 'copied'; setTimeout(() => (t.textContent = o), 1000); } }, text);
   const p = abs.startsWith('/') ? abs : '/' + abs.replace(/\\/g, '/'); // editors expect <scheme>://file/<absolute path> (Windows: /C:/…)
-  return h('a', { class: 'mono', href: make(encodeURI(p).replace(/#/g, '%23'), line), title: 'Open in ' + EDITORS[editor][0] }, text);
+  return h('a', { class: 'mono', href: make(encodeURI(p).replace(/#/g, '%23'), line), title: (text !== full ? full + ' — ' : '') + 'Open in ' + EDITORS[editor][0] }, text);
 }
 
 // ---------- theme ----------
@@ -387,36 +490,111 @@ function decorate(src) {
   const defs = [
     ['ui', '--ui', '--ui-line'], ['svc', '--node', '--node-line'], ['store', '--store', '--store-line'], ['ext', '--ext', '--ext-line'],
     ['assumed', '--warn-soft', '--warn', '4 3'], ['gap', '--bad-soft', '--bad', '4 3'],
-  ].map(([n, f, s, dash]) => 'classDef ' + n + ' fill:' + css(f) + ',stroke:' + css(s) + ',color:' + css('--text') + (dash ? ',stroke-dasharray:' + dash : ''));
+  ].map(([n, f, s, dash]) => 'classDef ' + n + ' fill:' + css(f) + ',stroke:' + css(s) + ',color:' + css('--text') + (dash ? ',stroke-dasharray:' + dash : ''))
+    .concat(['classDef fvOn stroke:' + css('--accent') + ',stroke-width:3px', 'classDef fvOff opacity:0.22']);
   if (/^(flowchart|graph)$/.test(head) || /^stateDiagram/.test(head)) return src.replace(/\s*$/, '\n') + defs.map(d => '  ' + d).join('\n') + '\n';
   return src;
 }
 
 // ---------- status helpers ----------
-const statusOf = f => f.report?.status || (f.mode === 'observe' ? 'incomplete' : 'unverified');
+const statusOf = f => f.system ? 'system' : f.report?.status || (f.mode === 'observe' ? 'incomplete' : 'unverified');
+const FEATS = D.features.filter(f => !f.system);
+const sysOf = f => f.system ? f : D.features.find(x => x.name === f.systemMap) || null;
+const usedBy = (e, name) => (e.usedBy || []).includes(name);
 const KINDS = f => f.mode === 'observe' ? ['code'] : ['intended', 'code'];
 
 // ---------- sidebar ----------
-document.getElementById('proj').textContent = D.project + ' · ' + D.features.length + ' feature' + (D.features.length === 1 ? '' : 's');
+document.getElementById('proj').textContent = D.project + ' · ' + FEATS.length + ' feature' + (FEATS.length === 1 ? '' : 's');
 document.getElementById('gen').textContent = 'built ' + new Date(D.generatedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 let filter = 'all', query = '';
 const STATUSES = ['all', 'mismatch', 'partial', 'incomplete', 'verified', 'observed', 'unverified'];
 function renderFilters() {
   const box = document.getElementById('filters'); box.innerHTML = '';
   for (const s of STATUSES) {
-    const n = s === 'all' ? D.features.length : D.features.filter(f => statusOf(f) === s).length;
+    const n = s === 'all' ? FEATS.length : FEATS.filter(f => statusOf(f) === s).length;
     if (s !== 'all' && !n) continue;
     box.append(h('button', { class: 'chip', 'aria-pressed': String(filter === s), onclick: () => { filter = s; renderFilters(); renderList(); } }, s + ' ' + n));
   }
 }
+// Sidebar: features (grouped by feature.json "group"); the open feature unfolds into its flow tree.
+const openState = new Map((() => { try { return JSON.parse(store.get('fv-open', '[]')); } catch { return []; } })());
+const toggle = (key, now) => { openState.set(key, !now); store.set('fv-open', JSON.stringify([...openState])); renderList(); };
+function featureItem(f, cur, inGroup) {
+  const hi = (f.report?.risks || []).filter(r => r.impact === 'high').length;
+  return h('button', { class: 'fitem' + (inGroup ? ' ingroup' : ''), 'aria-current': String(f.name === cur), onclick: () => go(f.name) },
+    h('span', { class: 'dot ' + statusOf(f), title: statusOf(f) }), h('span', { class: 'n' }, f.name, h('span', { class: 'appr' }, (f.mode === 'observe' ? 'observe' : statusOf(f)) + (f.stale?.state === 'outdated' ? ' · code changed' : '') + (hi ? ' · ' + hi + ' high risk' : ''))));
+}
+function flowNav(f, r, hits, type = 'sequence') {
+  const t = flowTree(f, type);
+  if (t.flows.length < 2) return null;
+  const onSeq = r.feature === f.name && r.tab === type;
+  const curFlow = onSeq ? (t.flows.includes(r.flow) ? r.flow : t.flows[0]) : null;
+  const open = fl => go(f.name, type, onSeq ? r.view : undefined, fl);
+  const ul = h('ul', { class: 'ftree', role: 'tree', 'aria-label': f.name + ' diagrams' });
+  if (query && hits.length) {
+    for (const fl of hits) ul.append(h('li', { role: 'treeitem' }, h('div', { class: 'trow' }, h('span', { class: 'tw' }), h('button', { class: 'tnode', 'aria-current': String(fl === curFlow), onclick: () => open(fl) }, flowLabel(fl, true)))));
+    return ul;
+  }
+  const path = new Set();
+  for (let x = curFlow; x != null && !path.has(x); x = t.parent.get(x)) path.add(x);
+  const node = (fl, depth, seen) => {
+    const kids = t.kids.get(fl).filter(k => !seen.has(k)), cross = t.cross.get(fl);
+    const key = 'f:' + f.name + ':' + type + ':' + fl, has = kids.length + cross.length > 0;
+    const expanded = has && (openState.has(key) ? openState.get(key) : fl === '' || path.has(fl));
+    const li = h('li', { role: 'treeitem', 'aria-expanded': has ? String(expanded) : null },
+      h('div', { class: 'trow', style: 'padding-left:' + depth * 12 + 'px' },
+        has ? h('button', { class: 'tw', 'aria-label': (expanded ? 'Collapse ' : 'Expand ') + flowLabel(fl, true), onclick: () => toggle(key, expanded) }, expanded ? '▾' : '▸') : h('span', { class: 'tw' }),
+        h('button', { class: 'tnode', 'aria-current': String(fl === curFlow), title: flowLabel(fl, true), onclick: () => open(fl) }, flowLabel(fl, true),
+          t.changed(fl) ? h('span', { class: 'sdot', title: 'Code changed since this diagram was made' }) : null)));
+    if (fl === '' && type !== 'sequence') li.querySelector('.tnode').firstChild.textContent = TYPE_LABEL[type];
+    if (expanded) {
+      const sub = h('ul', { role: 'group' }), next = new Set([...seen, fl]);
+      for (const k of kids) sub.append(node(k, depth + 1, next));
+      for (const c of cross) sub.append(h('li', { role: 'treeitem' }, h('div', { class: 'trow', style: 'padding-left:' + (depth + 1) * 12 + 'px' }, h('span', { class: 'tw', 'aria-hidden': 'true' }, '↗'),
+        h('button', { class: 'tnode cross', title: 'In feature ' + drillTarget(f, c)[0], onclick: () => { const [ft, fl2] = drillTarget(f, c); go(ft, 'sequence', undefined, fl2); } }, drillLabel(f, c)))));
+      li.append(sub);
+    }
+    return li;
+  };
+  if (t.kids.has('')) ul.append(node('', 0, new Set()));
+  const rest = t.unlinked.filter(fl => fl !== '');
+  if (rest.length) {
+    ul.append(h('li', { class: 'tlabel' }, t.kids.has('') ? 'Not linked from the overview' : 'Diagrams'));
+    for (const fl of rest) ul.append(node(fl, 0, new Set()));
+  }
+  return ul;
+}
 function renderList() {
   const nav = document.getElementById('flist'); nav.innerHTML = '';
-  const cur = parseRoute().feature;
-  for (const f of D.features) {
-    if (filter !== 'all' && statusOf(f) !== filter) continue;
-    if (query && !f.name.toLowerCase().includes(query)) continue;
-    nav.append(h('button', { class: 'fitem', 'aria-current': String(f.name === cur), onclick: () => go(f.name) },
-      h('span', { class: 'dot ' + statusOf(f), title: statusOf(f) }), h('span', { class: 'n' }, f.name, h('span', { class: 'appr' }, (f.mode === 'observe' ? 'observe' : statusOf(f)) + (f.stale?.state === 'outdated' ? ' · code changed' : '') + ((f.report?.risks || []).filter(r => r.impact === 'high').length ? ' · ' + f.report.risks.filter(r => r.impact === 'high').length + ' high risk' : '')))));
+  const r = parseRoute(), cur = r.feature;
+  const flowHits = f => query ? flowTree(f).flows.filter(fl => fl && flowLabel(fl, true).toLowerCase().includes(query)) : [];
+  const shown = FEATS.filter(f => (filter === 'all' || statusOf(f) === filter) &&
+    (!query || f.name.toLowerCase().includes(query) || (f.group || '').toLowerCase().includes(query) || flowHits(f).length));
+  const groups = new Map();
+  for (const f of shown) { const g = f.group || ''; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(f); }
+  for (const x of D.features) if (x.system && !query && x.group !== 'main' && !groups.has(x.group)) groups.set(x.group, []);
+  if (D.features.some(x => x.system && x.group === 'main') && !groups.has('') && !query) groups.set('', []);
+  const order = [...[...groups.keys()].filter(Boolean).sort(), ...(groups.has('') ? [''] : [])];
+  for (const g of order) {
+    const box = h('div', { class: 'fgroup' });
+    const list = groups.get(g);
+    if (g) {
+      const key = 'g:' + g, open = query ? true : openState.get(key) ?? true; // filtering opens every group; otherwise the user decides
+      box.append(h('button', { class: 'ghead', 'aria-expanded': String(open), onclick: () => toggle(key, open) }, h('span', { 'aria-hidden': 'true' }, open ? '▾' : '▸'), g, h('span', { class: 'appr' }, ' · ' + list.length)));
+      if (!open) { nav.append(box); continue; }
+    }
+    const sys = D.features.find(x => x.system && x.group === (g || 'main'));
+    if (sys) {
+      box.append(h('button', { class: 'fitem sysitem' + (g ? ' ingroup' : ''), 'aria-current': String(sys.name === cur), onclick: () => go(sys.name) },
+        h('span', { class: 'sysicon', 'aria-hidden': 'true' }, '◎'), h('span', { class: 'n' }, 'System map', h('span', { class: 'appr' }, ['architecture', 'data', 'state'].filter(t => sys.diagrams[t]).join(' · ') + (sys.stale?.state === 'outdated' ? ' · code changed' : '')))));
+      if (sys.name === cur) { const ty = ['architecture', 'state', 'data'].includes(r.tab) ? r.tab : 'architecture'; const t = flowNav(sys, r, [], ty); if (t) box.append(t); }
+    }
+    for (const f of list) {
+      box.append(featureItem(f, cur, !!g));
+      const hits = flowHits(f);
+      if (f.name === cur || hits.length) { const t = flowNav(f, r, hits); if (t) box.append(t); }
+    }
+    nav.append(box);
   }
   if (!nav.children.length) nav.append(h('div', { class: 'appr', style: 'padding:10px' }, 'No matching features.'));
 }
@@ -425,7 +603,7 @@ document.getElementById('q').addEventListener('input', e => { query = e.target.v
 // ---------- routing: #/feature/tab/view ----------
 function parseRoute() {
   const [feature, tab, view, flow] = decodeURIComponent(location.hash.replace(/^#\/?/, '')).split('/');
-  return { feature: feature || D.features[0]?.name, tab: tab || 'overview', view, flow: flow || '' };
+  return { feature: feature || FEATS[0]?.name || D.features[0]?.name, tab: tab || 'overview', view, flow: flow || '' };
 }
 // #/feature/tab/view/flow — flow is the diagram's flow name ('' = the main diagram)
 const go = (feature, tab = 'overview', view, flow) => {
@@ -434,6 +612,35 @@ const go = (feature, tab = 'overview', view, flow) => {
   location.hash = '#/' + segs.map(x => encodeURIComponent(x || '')).join('/');
 };
 const flowLabel = (fl, multi) => fl ? fl.replace(/[-_]+/g, ' ').replace(/^./, c => c.toUpperCase()) : multi ? 'Overview' : 'Main';
+// @drill targets: 'flow' (this feature) | 'feature:flow' | 'feature:' (that feature's overview)
+const drillTarget = (f, t) => { const i = t.indexOf(':'); return i < 0 ? [f.name, t] : [t.slice(0, i), t.slice(i + 1)]; };
+const drillLabel = (f, t) => { const [ft, fl] = drillTarget(f, t); return (ft !== f.name ? ft + ' › ' : '') + flowLabel(fl, true); };
+// The feature's sequence flows as a tree, from its @drill links: overview → flows → deeper flows; cross-feature links as leaves.
+const treeCache = new Map();
+function flowTree(f, type = 'sequence') {
+  const ck = f.name + '|' + type;
+  if (treeCache.has(ck)) return treeCache.get(ck);
+  const d = f.diagrams[type];
+  const all = d ? ['intended', 'code'].flatMap(k => d[k]) : [];
+  const flows = [...new Set(all.map(dg => dg.flow))].sort((a, b) => (a ? 1 : 0) - (b ? 1 : 0) || a.localeCompare(b));
+  const kids = new Map(flows.map(fl => [fl, []])), cross = new Map(flows.map(fl => [fl, []])), parent = new Map();
+  for (const dg of all) for (const e of dg.elements) {
+    if (!e.drill) continue;
+    const [ft, fl] = drillTarget(f, e.drill);
+    if (ft !== f.name) { if (!cross.get(dg.flow).includes(e.drill)) cross.get(dg.flow).push(e.drill); continue; }
+    if (fl === dg.flow || !kids.has(fl) || fl === '') continue;
+    if (!kids.get(dg.flow).includes(fl)) kids.get(dg.flow).push(fl);
+    if (!parent.has(fl)) parent.set(fl, dg.flow);
+  }
+  const reach = new Set();
+  const walk = fl => { if (reach.has(fl)) return; reach.add(fl); kids.get(fl).forEach(walk); };
+  if (kids.has('')) walk('');
+  const unlinked = flows.filter(fl => !reach.has(fl) && !parent.has(fl));
+  unlinked.forEach(walk);
+  const t = { flows, kids, cross, parent, unlinked: [...unlinked, ...flows.filter(fl => !reach.has(fl))],
+    changed: fl => all.some(dg => dg.flow === fl && f.stale?.outdatedIn?.includes(dg.name)) };
+  treeCache.set(ck, t); return t;
+}
 const STALE = {
   outdated: ['code changed', 'Code the diagrams point at was edited since they were made. Ask the agent to re-run this feature.'],
   shifted: ['code moved', 'Referenced files were edited, but not at the lines the diagrams point at (line numbers may have moved).'],
@@ -443,17 +650,19 @@ addEventListener('hashchange', route);
 function route() {
   renderList();
   const main = document.getElementById('main'); main.innerHTML = '';
+  fsToggle = null; document.body.classList.remove('noscroll');
   if (!D.features.length) { main.append(h('div', { class: 'empty' }, h('h2', {}, 'No features yet'), h('p', {}, 'Run feature-verify in this project to create one.'))); return; }
   const r = parseRoute();
   const f = D.features.find(x => x.name === r.feature) || D.features[0];
   const st = statusOf(f);
-  main.append(h('header', { class: 'fhead' }, h('h1', {}, f.name), h('span', { class: 'pill ' + st }, st),
-    f.mode === 'observe' ? h('span', { class: 'pill mode', title: 'Shows what the code does. Nothing is checked against a spec.' }, 'observe mode') : null,
+  main.append(h('header', { class: 'fhead' }, h('h1', {}, f.system ? 'System map' + (f.group !== 'main' ? ' · ' + f.group : '') : f.name), f.system ? h('span', { class: 'pill observed' }, 'whole system') : h('span', { class: 'pill ' + st }, st),
+    f.mode === 'observe' && !f.system ? h('span', { class: 'pill mode', title: 'Shows what the code does. Nothing is checked against a spec.' }, 'observe mode') : null,
     STALE[f.stale?.state] ? h('button', { class: 'pill stale ' + (f.stale.state === 'outdated' ? 'mismatch' : 'partial'), title: STALE[f.stale.state][1], onclick: () => go(f.name) }, STALE[f.stale.state][0]) : null));
   if (f.report?.summary) main.append(h('p', { class: 'summary' }, f.report.summary));
+  if (f.system && !f.report?.summary) main.append(h('p', { class: 'summary' }, 'How the parts of ' + (f.group === 'main' ? 'the project' : f.group) + ' fit together: components, data and lifecycles. Each feature is a story through this map — pick one to see which parts it uses.'));
 
   const tabs = [['overview', 'Overview']];
-  for (const t of TYPES) if (f.diagrams[t]) tabs.push([t, TYPE_LABEL[t]]);
+  for (const t of TYPES) if (f.diagrams[t] || (t !== 'sequence' && sysOf(f)?.diagrams[t])) tabs.push([t, TYPE_LABEL[t]]); // no own diagram → the system map, this feature highlighted
   tabs.push(['concepts', 'Concepts']);
   if (f.intent || f.spec) tabs.push(['intent', 'Intent']);
   const tab = tabs.some(t => t[0] === r.tab) ? r.tab : 'overview';
@@ -491,9 +700,9 @@ function checkRows(f) {
   const rows = [];
   const row = (state, k, v) => rows.push(h('li', {}, h('span', { class: 'ic ' + state }, { ok: '✓', bad: '✕', warn: '!', na: '–' }[state]), h('span', { class: 'k' }, k), h('span', { class: 'v' }, v)));
   const st = f.stale;
-  const staleRow = () => !st || st.state === 'unknown' ? row('na', 'Code since diagrams', 'not tracked — run stale.mjs record after the checks pass')
+  const staleRow = () => (f.checks?.size?.warn ? row('warn', 'Size', f.checks.size.warn) : null, !st || st.state === 'unknown' ? row('na', 'Code since diagrams', 'not tracked — run stale.mjs record after the checks pass')
     : row({ fresh: 'ok', shifted: 'warn', outdated: 'bad' }[st.state], 'Code since diagrams', st.state === 'fresh' ? 'unchanged since ' + new Date(st.recordedAt).toLocaleDateString()
-      : st.counts.changed + ' ref(s) changed · ' + st.counts.gone + ' gone · ' + st.counts.moved + ' moved, since ' + new Date(st.recordedAt).toLocaleDateString());
+      : st.counts.changed + ' ref(s) changed · ' + st.counts.gone + ' gone · ' + st.counts.moved + ' moved, since ' + new Date(st.recordedAt).toLocaleDateString()));
   if (!f.checks) { row('na', 'Mechanical checks', 'not run yet — run compare.mjs'); staleRow(); return rows; }
   if (f.mode === 'observe') {
     row(c.syntax?.ok ? 'ok' : c.syntax?.unavailable ? 'warn' : 'bad', 'Diagram syntax', c.syntax?.ok ? 'all diagrams parse (' + (c.syntax.parser || 'mermaid') + ')' : c.syntax?.unavailable || (c.syntax?.errors?.length + ' diagram(s) fail to parse'));
@@ -551,8 +760,37 @@ function staleCard(f) {
     hard.length ? h('ul', { class: 'risks' }, hard.map(item)) : null,
     moved.length ? h('details', { class: 'moved' }, h('summary', {}, moved.length + ' ref(s) only moved — same code, new line number'), h('ul', { class: 'risks' }, moved.map(item))) : null);
 }
-function overview(f, body) {
+// Short name of a system element: node label, entity name, or "From → To".
+const elName = e => { const p = prettyEl(e.text); return p.map(x => typeof x === 'string' ? x : x.textContent).filter(Boolean).reverse().find(x => x && x !== '(transition)') || e.text; };
+const MAP_TYPES = ['architecture', 'data', 'state'];
+function usesCard(f) {
+  const sys = sysOf(f);
+  if (!sys || f.system) return null;
+  const rows = MAP_TYPES.filter(t => sys.diagrams[t]).map(t => {
+    const hits = sys.diagrams[t].code.flatMap(dg => dg.elements.filter(e => usedBy(e, f.name)).map(e => [dg, e]));
+    const uniq = [...new Map(hits.map(([dg, e]) => [elName(e), [dg, e]])).values()];
+    return h('li', {}, h('span', { class: 'k' }, TYPE_LABEL[t]), h('div', { class: 'usedby' }, uniq.length
+      ? uniq.slice(0, 16).map(([dg, e]) => h('button', { class: 'chip', onclick: () => go(f.name, t, 'system', dg.flow) }, elName(e))).concat(uniq.length > 16 ? [h('span', { class: 'appr' }, '+' + (uniq.length - 16))] : [])
+      : h('span', { class: 'appr' }, 'nothing found')));
+  });
+  return h('div', { class: 'card riskcard' }, h('h2', {}, 'In the system'), h('p', { class: 'cardnote' }, 'The parts of the ' + (sys.group === 'main' ? '' : sys.group + ' ') + 'system map this feature uses — open one to see it in context.'), h('ul', { class: 'uses' }, rows));
+}
+function systemOverview(f, body) {
   const sc = staleCard(f); if (sc) body.append(sc);
+  const members = FEATS.filter(x => x.systemMap === f.name);
+  for (const t of MAP_TYPES) {
+    const d = f.diagrams[t]; if (!d) continue;
+    const rows = d.code.flatMap(dg => dg.elements.filter(e => !e.rel).map(e => h('tr', {},
+      h('td', {}, h('button', { class: 'linkbtn', style: 'font-size:13px;text-align:left', onclick: () => go(f.name, t, '', dg.flow) }, elName(e)), dg.flow ? h('span', { class: 'from' }, flowLabel(dg.flow, true)) : null),
+      h('td', {}, e.usedBy?.length ? h('div', { class: 'usedby' }, e.usedBy.map(n => h('button', { class: 'chip', onclick: () => go(f.name, t, n, dg.flow) }, n))) : h('span', { class: 'from' }, 'no feature found')))));
+    body.append(h('div', { class: 'card details' }, h('h2', {}, TYPE_LABEL[t] + ' · what uses what'), h('table', { class: 'el' }, h('tr', {}, h('th', {}, 'Part'), h('th', {}, 'Used by (click to highlight)')), rows)));
+  }
+  body.append(h('div', { class: 'card details' }, h('h2', {}, 'Features in this system · ' + members.length), h('div', { class: 'usedby', style: 'padding:0 16px 14px' }, members.map(x => h('button', { class: 'chip', onclick: () => go(x.name) }, x.name)))));
+}
+function overview(f, body) {
+  if (f.system) return systemOverview(f, body);
+  const sc = staleCard(f); if (sc) body.append(sc);
+  const uc = usesCard(f); if (uc) body.append(uc);
   const rc = risksCard(f); if (rc) body.append(rc);
   const left = h('div', { class: 'stack' });
   left.append(h('div', { class: 'card' }, h('h2', {}, 'Checks'), h('ul', { class: 'checks' }, checkRows(f))));
@@ -580,6 +818,7 @@ function overview(f, body) {
 let seq = 0;
 function diagramTab(f, type, view, flow, body) {
   const d = f.diagrams[type];
+  if (f.system || !d || view === 'system') return mapTab(f, type, view, flow, body);
   const all = ['intended', 'code'].flatMap(k => d[k]);
   const flows = [...new Set(all.map(dg => dg.flow))].sort((a, b) => (a ? 1 : 0) - (b ? 1 : 0) || a.localeCompare(b));
   const multi = flows.length > 1;
@@ -589,27 +828,26 @@ function diagramTab(f, type, view, flow, body) {
   const valid = KINDS(f).length > 1 ? [...KINDS(f), 'compare'] : KINDS(f);
   if (!valid.includes(view) || (view !== 'compare' && !at(view)) || (view === 'compare' && kinds.length < 2)) view = kinds.length > 1 ? 'compare' : kinds[0];
   const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'View' }, valid.map(k =>
-    h('button', { 'aria-pressed': String(k === view), disabled: k !== 'compare' && !at(k) || (k === 'compare' && kinds.length < 2), onclick: () => go(f.name, type, k, flow) }, k[0].toUpperCase() + k.slice(1))));
+    h('button', { 'aria-pressed': String(k === view), disabled: k !== 'compare' && !at(k) || (k === 'compare' && kinds.length < 2), onclick: () => go(f.name, type, k, flow) }, k[0].toUpperCase() + k.slice(1))),
+    type !== 'sequence' && sysOf(f)?.diagrams[type] ? h('button', { 'aria-pressed': 'false', onclick: () => go(f.name, type, 'system') }, 'In the system') : null);
   const zoomCtl = h('div', { class: 'zoom' });
   body.append(h('div', { class: 'toolbar' }, seg, zoomCtl));
 
-  // Small flow diagrams: breadcrumb back up the @drill chain, and every flow one click away.
-  const onDrill = target => go(f.name, type, view, target);
+  // Small flow diagrams: breadcrumb back up the @drill chain; the full tree is in the sidebar.
+  const onDrill = target => { const [ft, fl] = drillTarget(f, target); go(ft, type, view, fl); };
   if (multi) {
-    const parent = new Map();
-    for (const dg of all) for (const e of dg.elements) if (e.drill && e.drill !== dg.flow && !parent.has(e.drill)) parent.set(e.drill, dg.flow);
+    const t = type === 'sequence' ? flowTree(f) : null;
     const chain = [flow];
-    while (parent.has(chain[0]) && !chain.includes(parent.get(chain[0]))) chain.unshift(parent.get(chain[0]));
-    const hasDrill = kinds.some(k => at(k).elements.some(e => e.drill));
+    while (t?.parent.has(chain[0]) && !chain.includes(t.parent.get(chain[0]))) chain.unshift(t.parent.get(chain[0]));
+    if (t && chain[0] !== '' && t.flows.includes('')) chain.unshift('');
+    const next = t ? [...t.kids.get(flow), ...t.cross.get(flow)] : flows.filter(fl => fl !== flow);
     body.append(h('div', { class: 'flownav' },
       h('nav', { class: 'crumbs', 'aria-label': 'Diagram path' }, chain.map((fl, i) => i < chain.length - 1
         ? [h('button', { class: 'linkbtn', onclick: () => onDrill(fl) }, flowLabel(fl, true)), h('span', { class: 'sep', 'aria-hidden': 'true' }, '›')]
         : h('b', { 'aria-current': 'page' }, flowLabel(fl, true))),
-        hasDrill ? h('span', { class: 'hint' }, ' · click a ⤵ step to open it') : null),
-      h('div', { class: 'flows' }, h('span', {}, flows.length + ' diagrams:'), flows.map(fl => {
-        const changed = all.some(dg => dg.flow === fl && f.stale?.outdatedIn?.includes(dg.name));
-        return h('button', { class: 'chip', 'aria-pressed': String(fl === flow), onclick: () => onDrill(fl), title: changed ? 'Code changed since this diagram was made' : null }, flowLabel(fl, true), changed ? h('span', { class: 'sdot', 'aria-label': 'code changed' }) : null);
-      }))));
+        next.length && t ? h('span', { class: 'hint' }, ' · click a ⤵ step to open it') : null),
+      next.length ? h('div', { class: 'flows' }, h('span', {}, t ? 'Opens from here:' : 'Other diagrams:'), next.map(x =>
+        h('button', { class: 'chip', onclick: () => onDrill(x) }, t ? drillLabel(f, x) : flowLabel(x, true)))) : null));
   }
 
   const options = ['intended', 'code'].flatMap(k => d[k].map(dg => ({ key: k + ':' + dg.name, kind: k, dg, label: k[0].toUpperCase() + k.slice(1) + (multi ? ' · ' + flowLabel(dg.flow, true) : '') })));
@@ -631,7 +869,7 @@ function diagramTab(f, type, view, flow, body) {
           options.map(x => h('option', { value: x.key, selected: x.key === key }, x.label)))
       : h('b', {}, o.label);
     panes.append(h('div', { class: 'card pane' }, h('div', { class: 'pane-h' }, title, h('span', { class: 'mono' }, o.dg.name)), c));
-    canvases.push(mountCanvas(c, o.dg, type === 'sequence' ? onDrill : null));
+    canvases.push(mountCanvas(c, o.dg, type === 'sequence' ? onDrill : null, x => drillLabel(f, x)));
   });
   body.append(panes);
   // zoom controls drive every visible canvas together
@@ -640,7 +878,7 @@ function diagramTab(f, type, view, flow, body) {
   zoomCtl.append(h('button', { class: 'iconbtn', title: 'Zoom out (−)', onclick: zoomAll(cv => cv.zoom(1 / 1.2)) }, '−'), zl,
     h('button', { class: 'iconbtn', title: 'Zoom in (+)', onclick: zoomAll(cv => cv.zoom(1.2)) }, '+'),
     h('button', { class: 'iconbtn', title: 'Fit (0)', onclick: zoomAll(cv => cv.fit()) }, 'Fit'),
-    h('button', { class: 'iconbtn', title: 'Actual size', onclick: zoomAll(cv => cv.setScale(1)) }, '1:1'));
+    h('button', { class: 'iconbtn', title: 'Actual size', onclick: zoomAll(cv => cv.setScale(1)) }, '1:1'), fullscreenCtl(panes, canvases));
   Promise.all(canvases.map(cv => cv?.ready)).then(() => { zl.textContent = Math.round((canvases[0]?.scale() || 1) * 100) + '%'; });
   onkeydown = e => { if (e.target.closest('input')) return; if (e.key === '+' || e.key === '=') zoomAll(cv => cv.zoom(1.2))(); if (e.key === '-') zoomAll(cv => cv.zoom(1 / 1.2))(); if (e.key === '0') zoomAll(cv => cv.fit())(); };
 
@@ -648,6 +886,55 @@ function diagramTab(f, type, view, flow, body) {
   body.append(termBar(f, type, picks.map(k => options.find(x => x.key === k).dg.src).join('\n')));
   // element details for the single view (or the code+intended pair in compare)
   for (const key of picks) { const o = options.find(x => x.key === key); if (o.dg.elements.length) body.append(elementTable(f, o.kind, o.dg, onDrill)); }
+}
+
+// A system diagram: on the system page (optionally highlighting one feature), or inside a feature's tab
+// (that feature's parts highlighted, the rest dimmed). Route view slot: system page → highlighted feature name.
+function mapTab(f, type, view, flow, body) {
+  const sys = sysOf(f), d = sys?.diagrams[type];
+  if (!d?.code.length) { body.append(h('div', { class: 'empty' }, 'No ' + TYPE_LABEL[type].toLowerCase() + ' diagram' + (sys ? ' in the system map.' : '. Ask the agent to draw the system map for this group.'))); return; }
+  const dgs = d.code;
+  const hl = f.system ? (FEATS.some(x => x.name === view) ? view : null) : f.name;
+  const uses = dg => hl ? dg.elements.filter(e => usedBy(e, hl)).length : 0;
+  let dg = dgs.find(x => x.flow === flow) || (hl && !f.system && dgs.find(x => x.flow === '' && uses(x))) || (hl && !f.system && dgs.find(uses)) || dgs[0];
+  flow = dg.flow;
+  const v = f.system ? (hl || '') : 'system';
+  const nav = fl => go(f.name, type, v, fl);
+  const name = fl => fl ? flowLabel(fl, true) : TYPE_LABEL[type];
+  const left = h('div', { class: 'toolleft' });
+  if (!f.system && f.diagrams[type]) left.append(h('div', { class: 'seg', role: 'group' }, KINDS(f).map(k => h('button', { 'aria-pressed': 'false', onclick: () => go(f.name, type, k) }, k[0].toUpperCase() + k.slice(1))), h('button', { 'aria-pressed': 'true' }, 'In the system')));
+  if (f.system) left.append(h('label', { class: 'hlpick' }, 'Highlight', h('select', { onchange: e => go(f.name, type, e.target.value, flow) }, h('option', { value: '' }, 'no feature'),
+    FEATS.filter(x => x.systemMap === f.name).map(x => h('option', { value: x.name, selected: x.name === hl }, x.name)))));
+  else left.append(h('span', { class: 'hint' }, uses(dg) ? 'The ' + (sys.group === 'main' ? '' : sys.group + ' ') + 'system map — what ' + f.name + ' uses is highlighted.' : f.name + ' uses nothing in this diagram.'));
+  const zoomCtl = h('div', { class: 'zoom' });
+  body.append(h('div', { class: 'toolbar' }, left, zoomCtl));
+  if (dgs.length > 1) {
+    const t = flowTree(sys, type);
+    const chain = [flow];
+    while (t.parent.has(chain[0]) && !chain.includes(t.parent.get(chain[0]))) chain.unshift(t.parent.get(chain[0]));
+    const kids = t.kids.get(flow) || [];
+    const others = dgs.filter(x => x !== dg && !kids.includes(x.flow) && !chain.includes(x.flow));
+    const chip = fl => { const x = dgs.find(y => y.flow === fl); return h('button', { class: 'chip', onclick: () => nav(fl) }, name(fl), x && uses(x) ? h('span', { class: 'sdot', style: 'background:var(--accent)', title: 'Used by ' + hl }) : null); };
+    body.append(h('div', { class: 'flownav' },
+      h('nav', { class: 'crumbs', 'aria-label': 'Diagram path' }, chain.map((fl, i) => i < chain.length - 1
+        ? [h('button', { class: 'linkbtn', onclick: () => nav(fl) }, name(fl)), h('span', { class: 'sep', 'aria-hidden': 'true' }, '›')] : h('b', { 'aria-current': 'page' }, name(fl))),
+        kids.length ? h('span', { class: 'hint' }, ' · click a blue-bordered part to open it') : null),
+      kids.length ? h('div', { class: 'flows' }, h('span', {}, 'Opens from here:'), kids.map(chip)) : null,
+      others.length ? h('div', { class: 'flows' }, h('span', {}, 'Other ' + TYPE_LABEL[type].toLowerCase() + ' diagrams:'), others.map(x => chip(x.flow))) : null));
+  }
+  const onDrill = target => { const [ft, fl] = drillTarget(sys, target); if (ft !== sys.name) go(ft, 'sequence', undefined, fl); else nav(fl); };
+  const c = h('div', { class: 'canvas', tabindex: '0', 'aria-label': TYPE_LABEL[type] + ' diagram' });
+  const panes = h('div', { class: 'panes n1' }, h('div', { class: 'card pane' }, h('div', { class: 'pane-h' }, h('b', {}, 'System · ' + name(flow) + (hl ? ' · ' + hl + ' highlighted' : '')), h('span', { class: 'mono' }, dg.name)), c));
+  body.append(panes);
+  const hlSet = hl ? new Set(dg.elements.map((e, i) => usedBy(e, hl) ? i : -1).filter(i => i >= 0)) : null;
+  const cv = mountCanvas(c, dg, onDrill, x => drillLabel(sys, x), hlSet);
+  const zl = h('span', {}, '');
+  const z = fn => () => { cv && fn(cv); zl.textContent = Math.round((cv?.scale() || 1) * 100) + '%'; };
+  zoomCtl.append(h('button', { class: 'iconbtn', onclick: z(x => x.zoom(1 / 1.2)) }, '−'), zl, h('button', { class: 'iconbtn', onclick: z(x => x.zoom(1.2)) }, '+'), h('button', { class: 'iconbtn', onclick: z(x => x.fit()) }, 'Fit'), h('button', { class: 'iconbtn', onclick: z(x => x.setScale(1)) }, '1:1'), fullscreenCtl(panes, [cv]));
+  cv?.ready.then(() => { zl.textContent = Math.round(cv.scale() * 100) + '%'; });
+  onkeydown = e => { if (e.target.closest('input, select')) return; if (e.key === '+' || e.key === '=') z(x => x.zoom(1.2))(); if (e.key === '-') z(x => x.zoom(1 / 1.2))(); if (e.key === '0') z(x => x.fit())(); };
+  body.append(termBar(sys, type, dg.src));
+  if (dg.elements.length) body.append(elementTable(sys, 'code', dg, onDrill, hl));
 }
 
 function diffBar(f) {
@@ -672,26 +959,42 @@ function prettyEl(text) {
   if (m) return [h('span', { class: 'from' }, 'entity'), m[1]];
   return [text];
 }
-function elementTable(f, kind, dg, onDrill) {
+function elementTable(f, kind, dg, onDrill, hl) {
+  const showUse = dg.elements.some(e => e.usedBy);
   const srcs = new Map((f.intent?.sources || []).map(s => [s.id, s]));
   const asm = new Map((f.intent?.assumptions || []).map(a => [a.id, a]));
   const staleTag = st => !st ? null : h('span', { class: 'tag stale' + (st.status === 'moved' ? '' : ' bad'), title: st.status === 'moved' ? 'Same code, now at line ' + st.newLine : 'This code was edited after the diagram was made' }, st.status === 'moved' ? 'moved → ' + st.newLine : st.status);
-  const rows = dg.elements.map(e => h('tr', {}, h('td', {}, prettyEl(e.text).map(x => typeof x === 'string' ? termify(f, x) : x),
-      e.drill && onDrill ? h('div', {}, h('button', { class: 'linkbtn', onclick: () => onDrill(e.drill) }, '⤵ open ' + flowLabel(e.drill, true))) : null),
+  const rows = dg.elements.map(e => h('tr', { class: hl && usedBy(e, hl) ? 'hlrow' : null }, h('td', {}, prettyEl(e.text).map(x => typeof x === 'string' ? termify(f, x) : x),
+      e.drill && onDrill ? h('div', {}, h('button', { class: 'linkbtn', onclick: () => onDrill(e.drill) }, '⤵ open ' + drillLabel(f, e.drill))) : null),
     kind === 'code'
       ? h('td', {}, e.rel && !e.refs.length ? h('span', { class: 'from' }, 'relationship (follows from the entities)') : e.refs.length ? e.refs.map(r => h('div', {}, fileLink(r.abs, r.line, r.file + ':' + r.line), r.symbol ? h('span', { class: 'mono', style: 'color:var(--muted)' }, '  #' + r.symbol) : null, ' ', staleTag(r.stale))) : h('span', { class: 'tag missing' }, 'no ref'))
       : h('td', {}, e.srcs.map(id => h('span', { class: 'tag', title: srcs.get(id)?.quote || 'unknown source' }, id)), e.assumed.map(id => h('span', { class: 'tag assumed', title: asm.get(id)?.text || '' }, id + ' · assumed')),
           !e.srcs.length && !e.assumed.length ? h('span', { class: 'tag missing' }, 'unsourced') : null,
-          e.srcs.length === 1 && srcs.get(e.srcs[0]) ? h('div', { style: 'color:var(--muted);font-size:12px' }, '“' + srcs.get(e.srcs[0]).quote + '”') : null)));
+          e.srcs.length === 1 && srcs.get(e.srcs[0]) ? h('div', { style: 'color:var(--muted);font-size:12px' }, '“' + srcs.get(e.srcs[0]).quote + '”') : null),
+    showUse ? h('td', {}, e.usedBy?.length ? h('div', { class: 'usedby' }, e.usedBy.map(n => h('button', { class: 'chip', 'aria-pressed': String(n === hl), onclick: () => go(n) }, n))) : h('span', { class: 'from' }, e.rel ? '' : 'no feature found')) : null));
   return h('div', { class: 'card details' }, h('h2', {}, kind === 'code' ? 'Code refs · ' + dg.name : 'Intent sources · ' + dg.name),
-    h('table', { class: 'el' }, h('tr', {}, h('th', {}, 'Element'), h('th', {}, kind === 'code' ? 'Where in the code' : 'Why it is intended')), rows));
+    h('table', { class: 'el' }, h('tr', {}, h('th', {}, 'Element'), h('th', {}, kind === 'code' ? 'Where in the code' : 'Why it is intended'), showUse ? h('th', {}, 'Used by') : null), rows));
 }
+
+// Full screen: the panes fill the window (button, F key, or double-click a diagram); Esc or ✕ leaves.
+let fsToggle = null;
+function fullscreenCtl(panes, canvases) {
+  const toggle = on => { panes.classList.toggle('fs', on); document.body.classList.toggle('noscroll', on); requestAnimationFrame(() => canvases.forEach(cv => cv?.fit())); };
+  fsToggle = toggle;
+  panes.append(h('button', { class: 'iconbtn fsclose', onclick: () => toggle(false) }, '✕ Exit full screen (Esc)'));
+  return h('button', { class: 'iconbtn', title: 'Full screen (F, or double-click the diagram)', onclick: () => toggle(!panes.classList.contains('fs')) }, '⛶ Full screen');
+}
+addEventListener('keydown', e => {
+  if (!fsToggle || e.target.closest?.('input, select, textarea')) return;
+  if (e.key === 'Escape') fsToggle(false);
+  if (e.key === 'f' || e.key === 'F') fsToggle(!document.querySelector('.panes.fs'));
+});
 
 // Pan / zoom canvas around one rendered Mermaid SVG.
 // Sequence messages with  %% @drill <flow>  become clickable; messages whose code changed since the diagram was made turn red.
 // Mermaid draws, per message in source order, its label text(s) (.messageText, several when wrapped) followed by its
 // line (.messageLine0/1), so the n-th line is the n-th element.
-function hookMessages(svg, dg, onDrill) {
+function hookMessages(svg, dg, onDrill, label) {
   const msgs = []; let texts = [];
   for (const n of svg.querySelectorAll('.messageText, .messageLine0, .messageLine1')) {
     if (n.classList.contains('messageText')) texts.push(n); else { msgs.push({ line: n, texts }); texts = []; }
@@ -711,11 +1014,46 @@ function hookMessages(svg, dg, onDrill) {
     hit.setAttribute('data-drill', e.drill);
     for (const n of [line, ...texts]) {
       n.classList.add('fv-drill'); n.setAttribute('data-drill', e.drill);
-      const t = document.createElementNS('http://www.w3.org/2000/svg', 'title'); t.textContent = 'Open ' + flowLabel(e.drill, true); n.append(t);
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'title'); t.textContent = 'Open ' + label(e.drill); n.append(t);
     }
   });
 }
-function mountCanvas(el, dg, onDrill) {
+// Flowchart / state: highlighted elements get class fvOn, the rest fvOff (dimmed); @drill nodes and transition labels
+// become clickable. ER: entities are dimmed / outlined after render (ids are entity-<NAME without _>-<uuid>).
+const nodeId = e => (e.text.match(/^([\w-]+)/) || [])[1];
+function highlightSrc(src, dg, hl) {
+  const head = src.trimStart().split(/\s/)[0];
+  const add = (on, off) => src.replace(/\s*$/, '\n') + (on.length ? '  class ' + on.join(',') + ' fvOn\n' : '') + (off.length ? '  class ' + off.join(',') + ' fvOff\n' : '');
+  if (/^(flowchart|graph)$/.test(head)) {
+    const on = [], off = [];
+    dg.elements.forEach((e, i) => { const id = nodeId(e); if (id) (hl.has(i) ? on : off).push(id); });
+    return add(on, off);
+  }
+  if (/^stateDiagram/.test(head)) {
+    const on = new Set(), all = new Set();
+    dg.elements.forEach((e, i) => { const m = e.text.match(/^(\S+)\s*-->\s*([^\s:]+)/); if (!m) return; for (const x of [m[1], m[2]]) { all.add(x); if (hl.has(i)) on.add(x); } });
+    return add([...on], [...all].filter(x => !on.has(x)));
+  }
+  return src;
+}
+function hookMap(svg, dg, onDrill, label, hl) {
+  const key = x => String(x).replace(/[^A-Za-z0-9]/g, '').toLowerCase();
+  if (hl && svg.querySelector('g[id^="entity-"]')) {
+    const on = new Set(dg.elements.filter((e, i) => hl.has(i)).map(e => key((e.text.match(/^([A-Za-z_][\w-]*)/) || [])[1])));
+    for (const g of svg.querySelectorAll('g[id^="entity-"]')) g.classList.add(on.has(key(g.id.split('-')[1])) ? 'fv-on' : 'fv-off');
+  }
+  if (!onDrill) return;
+  const title = (n, t) => { const x = document.createElementNS('http://www.w3.org/2000/svg', 'title'); x.textContent = 'Open ' + label(t); n.append(x); };
+  for (const e of dg.elements) {
+    if (!e.drill) continue;
+    const id = nodeId(e);
+    const node = id && [...svg.querySelectorAll('g.node')].find(g => new RegExp('^flowchart-' + id.replace(/[-]/g, '\\-') + '-\\d+$').test(g.id));
+    if (node && !/-->/.test(e.text)) { node.classList.add('fv-drill-node'); node.setAttribute('data-drill', e.drill); title(node, e.drill); continue; }
+    const lbl = (e.text.split(':').slice(1).join(':') || '').trim();
+    if (lbl) for (const n of svg.querySelectorAll('.edgeLabel')) if (n.textContent.trim() === lbl) { n.classList.add('fv-drill'); n.setAttribute('data-drill', e.drill); title(n, e.drill); }
+  }
+}
+function mountCanvas(el, dg, onDrill, label = x => x, hl = null) {
   if (dg.error) {
     el.append(h('div', { class: 'placeholder err' }, h('b', {}, 'This diagram has a syntax error and was not rendered.'), h('p', {}, (dg.error.line ? 'Line ' + dg.error.line + ': ' : '') + dg.error.message), dg.error.sourceLine ? h('pre', {}, dg.error.sourceLine) : null));
     el.style.cursor = 'default'; return null;
@@ -727,9 +1065,9 @@ function mountCanvas(el, dg, onDrill) {
     scale: () => s,
     fit() {
       if (!w) return;
-      const W = el.clientWidth, maxH = Math.min(innerHeight * 0.72, 920);
-      s = Math.min((W - 48) / w, 1.25);
-      el.style.height = Math.max(240, Math.min(maxH, ht * s + 48)) + 'px';
+      const W = el.clientWidth, maxH = Math.min(innerHeight * 0.72, 920), full = !!el.closest('.fs');
+      s = full ? Math.min((W - 48) / w, (innerHeight - 114) / ht, 2) : Math.min((W - 48) / w, 1.25);
+      if (!full) el.style.height = Math.max(240, Math.min(maxH, ht * s + 48)) + 'px';
       const H = el.clientHeight;
       x = (W - w * s) / 2; y = Math.max(24, (H - ht * s) / 2); apply();
     },
@@ -739,12 +1077,14 @@ function mountCanvas(el, dg, onDrill) {
   api.ready = (async () => {
     try {
       let src = dg.src;
-      const drills = onDrill ? dg.elements.filter(e => e.drill) : [];
+      const drills = onDrill && /^sequenceDiagram/.test(dg.src.trimStart()) ? dg.elements.filter(e => e.drill) : [];
       if (drills.length) { const ls = src.split('\n'); for (const e of drills) ls[e.mmdLine - 1] = ls[e.mmdLine - 1].replace(/\s*$/, ' ⤵'); src = ls.join('\n'); }
+      if (hl) src = highlightSrc(src, dg, hl);
       const { svg } = await mermaid.render('fv' + (++seq), decorate(src));
       stage.innerHTML = svg;
       const svgEl = stage.querySelector('svg');
-      if (dg.flow != null && /^sequenceDiagram/.test(dg.src.trimStart())) hookMessages(svgEl, dg, onDrill);
+      if (dg.flow != null && /^sequenceDiagram/.test(dg.src.trimStart())) hookMessages(svgEl, dg, onDrill, label);
+      else hookMap(svgEl, dg, onDrill, label, hl);
       const vb = svgEl.viewBox?.baseVal;
       w = vb?.width || svgEl.getBBox().width; ht = vb?.height || svgEl.getBBox().height;
       svgEl.setAttribute('width', w); svgEl.setAttribute('height', ht); svgEl.style.maxWidth = 'none';
@@ -771,7 +1111,7 @@ function mountCanvas(el, dg, onDrill) {
     if (e.ctrlKey || e.metaKey) api.zoom(Math.exp(-e.deltaY * 0.01), e.clientX - r.left, e.clientY - r.top);
     else { x -= e.deltaX; y -= e.deltaY; apply(); }
   }, { passive: false });
-  el.addEventListener('dblclick', () => api.fit());
+  el.addEventListener('dblclick', e => { if (e.target.closest?.('[data-drill]')) return; fsToggle ? fsToggle(!el.closest('.fs')) : api.fit(); });
   return api;
 }
 

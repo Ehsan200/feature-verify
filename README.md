@@ -76,6 +76,18 @@ Feature sidebar with status filters; per feature: **Overview** (risks, differenc
 
 Sequence diagrams stay small (≤ 10 messages, ≤ 5 participants): an **overview** of what the user does, plus one **flow** per action or endpoint (`code.sequence.add-to-cart.mmd`). A step marked ⤵ opens its flow when clicked; a breadcrumb (and the browser's back button) leads back up. Links are a comment after the step — `%% @drill add-to-cart` — and `compare.mjs` fails on a link to a flow that doesn't exist.
 
+### Big projects
+
+One feature = one user goal (≤ ~8 flows); a request covering many becomes several features in one **group** (`feature.json` → `"group": "neo"`), shown together in the sidebar. The open feature unfolds into a **tree of its flows** (overview → flows → deeper flows), so 40 diagrams don't become 40 buttons. Shared steps live in one feature and others link to them: `%% @drill payments:verify-transaction`. A feature that grew too big is split with `split.mjs`, which moves the diagrams and re-points every link.
+
+### System map
+
+Features are stories; the **system map** (`.feature-verify/_system/<group>/`) is what they run through: a layered architecture (click a module to open its inside), the data model, and one lifecycle per main record. It's drawn once per group. Each feature's Architecture / Data / State tab shows the map with that feature's parts highlighted, computed from shared code refs, so it can't drift. The system page lists what uses what; picking a feature highlights its parts. Lifecycle transitions link to the feature flow that causes them.
+
+![a lifecycle in the system map, inside the checkout feature](docs/dashboard-lifecycle.png)
+
+Any diagram can go **full screen**: the ⛶ button, the F key, or a double-click. Esc leaves.
+
 ### Has the code changed since?
 
 After the checks pass, `stale.mjs record` stores the code every ref points at (`basis.json`; each file as a git blob in whichever repo holds it, so nested repos and submodules work). Later, `stale.mjs .feature-verify` — also run by `discover` and the dashboard — tells you per ref: **fresh**, **moved** (same code, new line number), **changed** (that line or the one next to it was edited, or its symbol is gone) or **gone**. The dashboard marks the feature "code changed", lists the affected steps, colors them red in the diagram, and the agent redoes only those diagrams on the next run. Files outside any git repo are tracked by hash only (whole-file).
@@ -104,9 +116,10 @@ node ../../skills/feature-verify/scripts/dashboard.mjs .feature-verify && open .
 | example | mode | what it shows |
 |---|---|---|
 | [`examples/login-demo`](examples/login-demo) | **verify** | The spec (and the intent sources behind it) require locking an account after 5 failed logins; the code doesn't. Caught as status `423` missing from code and the `Locked` state absent from the code state diagram. Risks: unlimited password guessing, a forgeable token, plain-text passwords. One open assumption (A1) is listed for the user to answer. |
-| [`examples/cart-observe`](examples/cart-observe) | **observe** | A shop with a `docs/SPEC.md`, deliberately **ignored** via `.feature-verify/config.json` → `{"defaultMode": "observe"}`. Code only — and reading it shows the shop **can oversell** (stock checked per click, not against the cart) and shares one cart between all visitors. |
+| [`examples/cart-observe`](examples/cart-observe) | **observe** | A shop as a **group** (`shop`) of three small features — `shop-page` links to `add-to-cart` and `checkout`; `add-to-cart` opens a deeper `add-item` flow — plus the group's **system map**: layered architecture (click `cart.js` to see its functions), data model, and the cart and stock lifecycles, each transition linked to the feature that causes it. Its `docs/SPEC.md` is deliberately **ignored** (`{"defaultMode": "observe"}`). Reading the code shows the shop **can oversell** — the stock lifecycle has a `Negative` state — and shares one cart between all visitors. |
 
-![observe mode](docs/dashboard-observe.png)
+![system map with a feature highlighted](docs/dashboard-system.png)
+![small flows, click to open](docs/dashboard-observe.png)
 
 ## Privacy
 

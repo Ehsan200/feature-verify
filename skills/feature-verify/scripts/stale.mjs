@@ -15,11 +15,11 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { extractRefs, checkRef, isMain } from './lib.mjs';
+import { extractRefs, checkRef, fvRootOf, systemDirs, isMain } from './lib.mjs';
 
 const NEAR = 1; // an edit on the ref line or right next to it changes what the ref points at
 const readJson = f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
-const rootOf = fd => path.dirname(path.dirname(path.resolve(fd))); // <root>/.feature-verify/<feature>
+const rootOf = fd => path.dirname(fvRootOf(fd)); // <root>/.feature-verify/<feature> or <root>/.feature-verify/_system/<group>
 
 function git(cwd, args, okCodes = [0]) {
   const r = spawnSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 256 << 20 });
@@ -135,7 +135,9 @@ export function check(fd) {
 const isFeatureDir = d => fs.readdirSync(d).some(n => n === 'basis.json' || n.endsWith('.mmd') || n === 'report.json');
 export function checkAll(dir) {
   if (isFeatureDir(dir)) return [check(dir)];
-  return fs.readdirSync(dir, { withFileTypes: true }).filter(e => e.isDirectory()).map(e => path.join(dir, e.name)).filter(isFeatureDir).sort().map(check);
+  const features = fs.readdirSync(dir, { withFileTypes: true }).filter(e => e.isDirectory() && !e.name.startsWith('_')).map(e => path.join(dir, e.name)).filter(isFeatureDir).sort().map(check);
+  const systems = systemDirs(dir).filter(s => isFeatureDir(s.dir)).map(s => ({ ...check(s.dir), feature: '_system/' + s.group }));
+  return [...features, ...systems];
 }
 
 if (isMain(import.meta.url)) {

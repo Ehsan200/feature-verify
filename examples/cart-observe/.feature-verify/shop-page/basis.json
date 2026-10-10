@@ -1,0 +1,64 @@
+{
+  "recordedAt": "2026-10-10T12:31:28.022Z",
+  "files": {
+    "public/index.html": {
+      "blob": "9b6c37bc098c4847823bbbd4a0423017f03af2cd",
+      "repo": "../..",
+      "commit": "dbbab314900b08967bba6f3c23d2325d4a967fc8"
+    },
+    "src/server.js": {
+      "blob": "ddd1c5c1a2bc2ecd925feae10d01d98ee209d0eb",
+      "repo": "../..",
+      "commit": "dbbab314900b08967bba6f3c23d2325d4a967fc8"
+    },
+    "src/cart.js": {
+      "blob": "e8f7868ccff24d3dc22cb2992d30eebe83bd24b9",
+      "repo": "../..",
+      "commit": "dbbab314900b08967bba6f3c23d2325d4a967fc8"
+    }
+  },
+  "refs": [
+    {
+      "file": "public/index.html",
+      "line": 6,
+      "symbol": "/api/products",
+      "from": "code.sequence.mmd"
+    },
+    {
+      "file": "src/server.js",
+      "line": 12,
+      "symbol": "products",
+      "from": "code.sequence.mmd"
+    },
+    {
+      "file": "public/index.html",
+      "line": 8,
+      "symbol": "/api/cart",
+      "from": "code.sequence.mmd"
+    },
+    {
+      "file": "src/server.js",
+      "line": 13,
+      "symbol": "cartView",
+      "from": "code.sequence.mmd"
+    },
+    {
+      "file": "public/index.html",
+      "line": 10,
+      "symbol": "onclick",
+      "from": "code.sequence.mmd"
+    },
+    {
+      "file": "public/index.html",
+      "line": 16,
+      "symbol": "checkout",
+      "from": "code.sequence.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 13,
+      "symbol": "cartView",
+      "from": "glossary.json"
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 erDiagram
   %% @ref src/store.js:2#products
+  %% @feature checkout
   Product {
     int id
     string name
@@ -7,6 +8,7 @@ erDiagram
     int stock "decremented at checkout, can go negative"
   }
   %% @ref src/store.js:6#cart
+  %% @feature checkout
   CartLine {
     int productId
     int qty "written by addItem"

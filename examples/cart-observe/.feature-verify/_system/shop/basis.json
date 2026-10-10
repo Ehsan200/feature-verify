@@ -1,0 +1,147 @@
+{
+  "recordedAt": "2026-10-10T12:32:00.100Z",
+  "files": {
+    "src/cart.js": {
+      "blob": "e8f7868ccff24d3dc22cb2992d30eebe83bd24b9",
+      "repo": "../..",
+      "commit": "dbbab314900b08967bba6f3c23d2325d4a967fc8"
+    },
+    "src/store.js": {
+      "blob": "c36ee062e20fae359b2c5fab4b1e451aad7330db",
+      "repo": "../..",
+      "commit": "dbbab314900b08967bba6f3c23d2325d4a967fc8"
+    },
+    "public/index.html": {
+      "blob": "9b6c37bc098c4847823bbbd4a0423017f03af2cd",
+      "repo": "../..",
+      "commit": "dbbab314900b08967bba6f3c23d2325d4a967fc8"
+    },
+    "src/server.js": {
+      "blob": "ddd1c5c1a2bc2ecd925feae10d01d98ee209d0eb",
+      "repo": "../..",
+      "commit": "dbbab314900b08967bba6f3c23d2325d4a967fc8"
+    }
+  },
+  "refs": [
+    {
+      "file": "src/cart.js",
+      "line": 3,
+      "symbol": "addItem",
+      "from": "code.architecture.cart.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 13,
+      "symbol": "cartView",
+      "from": "code.architecture.cart.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 18,
+      "symbol": "checkout",
+      "from": "code.architecture.cart.mmd"
+    },
+    {
+      "file": "src/store.js",
+      "line": 1,
+      "symbol": "In-memory",
+      "from": "code.architecture.cart.mmd"
+    },
+    {
+      "file": "public/index.html",
+      "line": 5,
+      "symbol": "load",
+      "from": "code.architecture.mmd"
+    },
+    {
+      "file": "src/server.js",
+      "line": 10,
+      "symbol": "createServer",
+      "from": "code.architecture.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 1,
+      "symbol": "store.js",
+      "from": "code.architecture.mmd"
+    },
+    {
+      "file": "src/store.js",
+      "line": 2,
+      "symbol": "products",
+      "from": "code.architecture.mmd"
+    },
+    {
+      "file": "src/store.js",
+      "line": 2,
+      "symbol": "products",
+      "from": "code.data.mmd"
+    },
+    {
+      "file": "src/store.js",
+      "line": 6,
+      "symbol": "cart",
+      "from": "code.data.mmd"
+    },
+    {
+      "file": "src/store.js",
+      "line": 7,
+      "symbol": "orders",
+      "from": "code.data.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 9,
+      "symbol": "cart.items",
+      "from": "code.state.cart.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 7,
+      "symbol": "stock",
+      "from": "code.state.cart.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 22,
+      "symbol": "splice",
+      "from": "code.state.cart.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 19,
+      "symbol": "empty-cart",
+      "from": "code.state.cart.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 21,
+      "symbol": "stock",
+      "from": "code.state.stock.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 21,
+      "symbol": "stock",
+      "from": "code.state.stock.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 21,
+      "symbol": "stock",
+      "from": "code.state.stock.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 21,
+      "symbol": "stock",
+      "from": "code.state.stock.mmd"
+    },
+    {
+      "file": "src/store.js",
+      "line": 1,
+      "symbol": "In-memory",
+      "from": "glossary.json"
+    }
+  ]
+}

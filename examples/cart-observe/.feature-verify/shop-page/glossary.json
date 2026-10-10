@@ -1,0 +1,10 @@
+{
+  "terms": [
+    {
+      "term": "cartView",
+      "kind": "function",
+      "meaning": "Builds what the page shows for the cart: each line with its price, and the total.",
+      "ref": "src/cart.js:13#cartView"
+    }
+  ]
+}

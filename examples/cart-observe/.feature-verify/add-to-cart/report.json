@@ -1,0 +1,100 @@
+{
+  "feature": "add-to-cart",
+  "mode": "observe",
+  "status": "observed",
+  "summary": "Add sends POST /api/cart with qty 1; addItem checks the product, the quantity and the stock of this one request, then adds or increases the cart line. Stock is not checked against what is already in the cart.",
+  "findings": [
+    {
+      "severity": "low",
+      "type": "sequence",
+      "where": "code",
+      "text": "The page always sends qty 1 for listed products, so the 400 (bad qty) and 404 (unknown product) branches are only reachable by calling the API directly.",
+      "ref": "public/index.html:12"
+    }
+  ],
+  "risks": [
+    {
+      "impact": "high",
+      "category": "money / stock",
+      "type": "sequence",
+      "text": "Overselling starts here: stock is checked per click, not against what is already in the cart — 2 Lamps can be added with 1 in stock.",
+      "ref": "src/cart.js:7#stock"
+    },
+    {
+      "impact": "high",
+      "category": "privacy",
+      "type": "data",
+      "text": "There is one cart for the whole server: every visitor sees, changes and checks out the same cart, including other people's items.",
+      "ref": "src/store.js:6#cart"
+    }
+  ],
+  "skipped": {},
+  "mechanical": {
+    "feature": "add-to-cart",
+    "mode": "observe",
+    "coverage": {
+      "sequence": {
+        "intended": [],
+        "code": [
+          "code.sequence.add-item.mmd",
+          "code.sequence.mmd"
+        ]
+      },
+      "architecture": {
+        "intended": [],
+        "code": []
+      },
+      "data": {
+        "intended": [],
+        "code": []
+      },
+      "state": {
+        "intended": [],
+        "code": []
+      }
+    },
+    "syntax": {
+      "ok": true,
+      "parser": "mermaid@11.4.1",
+      "errors": [],
+      "warnings": [],
+      "unavailable": null
+    },
+    "refs": {
+      "checked": 9,
+      "failed": [],
+      "missing": [],
+      "ok": true
+    },
+    "intent": null,
+    "glossary": {
+      "hasGlossary": true,
+      "terms": 5,
+      "failed": [],
+      "missingMeaning": [],
+      "ok": true
+    },
+    "drills": {
+      "links": 1,
+      "crossFeature": 0,
+      "broken": [],
+      "ok": true
+    },
+    "size": {
+      "flows": 2,
+      "warn": null
+    },
+    "endpoints": null,
+    "statuses": {
+      "code": [
+        200,
+        400,
+        404,
+        409
+      ]
+    },
+    "checkedAt": "2026-10-10T12:31:28.159Z",
+    "ok": true
+  },
+  "generatedAt": "2026-10-10T12:30:00+00:00"
+}

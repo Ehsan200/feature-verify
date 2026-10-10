@@ -5,7 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
-import { loadMode } from './lib.mjs';
+import { loadMode, systemDirs, isFeatureName } from './lib.mjs';
 import { check as checkStale } from './stale.mjs';
 
 const root = path.resolve(process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : '.');
@@ -131,7 +131,7 @@ const e2eTests = has(/(^|\/)(e2e|tests?|cypress|playwright)\/.*\.(spec|test|cy)\
 const fvDir = path.join(root, '.feature-verify');
 const features = [];
 if (fs.existsSync(fvDir)) for (const d of fs.readdirSync(fvDir, { withFileTypes: true })) {
-  if (!d.isDirectory()) continue;
+  if (!d.isDirectory() || !isFeatureName(d.name)) continue;
   const fd = path.join(fvDir, d.name);
   const diagrams = fs.readdirSync(fd).filter(f => f.endsWith('.mmd'));
   let report = null; try { report = JSON.parse(fs.readFileSync(path.join(fd, 'report.json'), 'utf8')); } catch {}
@@ -162,7 +162,7 @@ const result = {
   frameworks: [...frameworks], tooling: [...tooling], devScripts,
   routes: { total: uniqRoutes.length, pages: uniqRoutes.filter(r => r.kind === 'page').slice(0, MAX_ROUTES), api: uniqRoutes.filter(r => r.kind === 'api').slice(0, MAX_ROUTES) },
   schemaFiles, stateFiles, e2eTests,
-  featureVerify: { exists: fs.existsSync(fvDir), defaultMode: (() => { try { return JSON.parse(fs.readFileSync(path.join(fvDir, 'config.json'), 'utf8')).defaultMode || 'verify'; } catch { return 'verify'; } })(), features },
+  featureVerify: { systems: systemDirs(fvDir).map(s => ({ group: s.group, diagrams: fs.readdirSync(s.dir).filter(f => f.endsWith('.mmd')), stale: (st => st.state === 'unknown' ? { state: 'unknown' } : { state: st.state, counts: st.counts, outdatedIn: st.outdatedIn })(checkStale(s.dir)) })), exists: fs.existsSync(fvDir), defaultMode: (() => { try { return JSON.parse(fs.readFileSync(path.join(fvDir, 'config.json'), 'utf8')).defaultMode || 'verify'; } catch { return 'verify'; } })(), features },
   git,
 };
 console.log(JSON.stringify(result, null, 2));

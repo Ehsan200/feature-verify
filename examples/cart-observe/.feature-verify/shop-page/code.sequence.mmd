@@ -1,0 +1,22 @@
+sequenceDiagram
+  actor Shopper
+  box Client
+    participant UI as Shop page
+  end
+  box Server
+    participant API as server.js
+  end
+  UI->>API: GET /api/products
+  %% @ref public/index.html:6#/api/products
+  API-->>UI: 200 products incl. stock
+  %% @ref src/server.js:12#products
+  UI->>API: GET /api/cart
+  %% @ref public/index.html:8#/api/cart
+  API-->>UI: 200 {lines, total}
+  %% @ref src/server.js:13#cartView
+  Shopper->>UI: Click Add
+  %% @ref public/index.html:10#onclick
+  %% @drill add-to-cart:
+  Shopper->>UI: Click Checkout
+  %% @ref public/index.html:16#checkout
+  %% @drill checkout:

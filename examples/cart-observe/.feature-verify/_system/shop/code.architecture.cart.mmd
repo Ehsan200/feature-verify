@@ -1,0 +1,16 @@
+flowchart LR
+  subgraph cart.js
+    add["addItem — validate, add line"]:::svc
+    %% @ref src/cart.js:3#addItem
+    view["cartView — lines + total"]:::svc
+    %% @ref src/cart.js:13#cartView
+    co["checkout — subtract stock, record order"]:::svc
+    %% @ref src/cart.js:18#checkout
+  end
+  mem[("store.js")]:::store
+  %% @ref src/store.js:1#In-memory
+  add -->|"cart.items"| mem
+  add --> view
+  co --> view
+  co -->|"stock, orders"| mem
+  view -->|read| mem

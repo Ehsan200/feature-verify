@@ -1,0 +1,70 @@
+{
+  "feature": "shop",
+  "mode": "observe",
+  "coverage": {
+    "sequence": {
+      "intended": [],
+      "code": []
+    },
+    "architecture": {
+      "intended": [],
+      "code": [
+        "code.architecture.cart.mmd",
+        "code.architecture.mmd"
+      ]
+    },
+    "data": {
+      "intended": [],
+      "code": [
+        "code.data.mmd"
+      ]
+    },
+    "state": {
+      "intended": [],
+      "code": [
+        "code.state.cart.mmd",
+        "code.state.stock.mmd"
+      ]
+    }
+  },
+  "syntax": {
+    "ok": true,
+    "parser": "mermaid@11.4.1",
+    "errors": [],
+    "warnings": [],
+    "unavailable": null
+  },
+  "refs": {
+    "checked": 19,
+    "failed": [],
+    "missing": [],
+    "ok": true
+  },
+  "intent": null,
+  "glossary": {
+    "hasGlossary": true,
+    "terms": 1,
+    "failed": [],
+    "missingMeaning": [],
+    "ok": true
+  },
+  "drills": {
+    "links": 9,
+    "crossFeature": 8,
+    "broken": [],
+    "ok": true
+  },
+  "size": {
+    "flows": 0,
+    "warn": null
+  },
+  "endpoints": null,
+  "statuses": {
+    "code": [
+      201,
+      409
+    ]
+  },
+  "checkedAt": "2026-10-10T12:33:30.194Z",
+  "ok": true
+}

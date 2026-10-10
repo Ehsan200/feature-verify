@@ -5,28 +5,20 @@
     "sequence": {
       "intended": [],
       "code": [
-        "code.sequence.add-to-cart.mmd",
-        "code.sequence.checkout.mmd",
         "code.sequence.mmd"
       ]
     },
     "architecture": {
       "intended": [],
-      "code": [
-        "code.architecture.mmd"
-      ]
+      "code": []
     },
     "data": {
       "intended": [],
-      "code": [
-        "code.data.mmd"
-      ]
+      "code": []
     },
     "state": {
       "intended": [],
-      "code": [
-        "code.state.mmd"
-      ]
+      "code": []
     }
   },
   "syntax": {
@@ -37,7 +29,7 @@
     "unavailable": null
   },
   "refs": {
-    "checked": 32,
+    "checked": 7,
     "failed": [],
     "missing": [],
     "ok": true
@@ -45,26 +37,28 @@
   "intent": null,
   "glossary": {
     "hasGlossary": true,
-    "terms": 8,
+    "terms": 2,
     "failed": [],
     "missingMeaning": [],
     "ok": true
   },
   "drills": {
-    "links": 2,
+    "links": 0,
+    "crossFeature": 0,
     "broken": [],
     "ok": true
+  },
+  "size": {
+    "flows": 1,
+    "warn": null
   },
   "endpoints": null,
   "statuses": {
     "code": [
-      200,
       201,
-      400,
-      404,
       409
     ]
   },
-  "checkedAt": "2026-10-10T11:26:40.607Z",
+  "checkedAt": "2026-10-10T12:31:28.507Z",
   "ok": true
 }

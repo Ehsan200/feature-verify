@@ -1,0 +1,42 @@
+{
+  "terms": [
+    {
+      "term": "qty",
+      "aka": [
+        "quantity"
+      ],
+      "kind": "field",
+      "meaning": "Quantity: how many units of a product are being added. The shop page always sends 1 per click.",
+      "ref": "src/cart.js:6#qty"
+    },
+    {
+      "term": "addItem",
+      "kind": "function",
+      "meaning": "The code that runs when someone clicks Add: checks the product and stock, then puts it in the cart.",
+      "ref": "src/cart.js:3#addItem"
+    },
+    {
+      "term": "cart.items",
+      "aka": [
+        "cart line",
+        "CartLine",
+        "lines"
+      ],
+      "kind": "data",
+      "meaning": "The list of products currently in the cart, one line per product with its quantity. There is a single cart shared by everyone.",
+      "ref": "src/store.js:6#cart"
+    },
+    {
+      "term": "out-of-stock",
+      "kind": "error",
+      "meaning": "Error returned when asking for more units than the product's stock in a single request.",
+      "ref": "src/cart.js:7#out-of-stock"
+    },
+    {
+      "term": "bad-qty",
+      "kind": "error",
+      "meaning": "Error returned when the quantity is not a whole number of at least 1.",
+      "ref": "src/cart.js:6#bad-qty"
+    }
+  ]
+}
