@@ -42,6 +42,8 @@ Plain Node ≥ 18, no dependencies. `validate.mjs` installs `mermaid` into `~/.c
 | `validate.mjs <dir or .mmd>` | real Mermaid parse of every diagram + readability lint |
 | `compare.mjs <feature-dir>` | all mechanical checks as JSON |
 | `dashboard.mjs .feature-verify` | build the dashboard (refuses if any diagram fails to parse) |
+| `stale.mjs record <feature-dir>` | snapshot the code every ref points at → `basis.json` (git; each file in its own repo) |
+| `stale.mjs .feature-verify` | has the code changed since? per ref: fresh · moved (new line) · changed · gone |
 
 ## Commands
 
@@ -63,12 +65,14 @@ Plain Node ≥ 18, no dependencies. `validate.mjs` installs `mermaid` into `~/.c
     intent.json                      sources of intent + assumptions (verify)
     intended.<type>.mmd              from intent sources only — never from code (verify)
     code.<type>.mmd                  from code; every element has an @ref
+    <kind>.sequence.<flow>.mmd       one small flow (e.g. code.sequence.add-to-cart.mmd); the plain file is the overview
+    basis.json                       snapshot of the referenced code (stale.mjs record) — what "changed since" compares against
     glossary.json                    plain-language meanings of non-obvious terms
     compare.json                     mechanical check output
     report.json                      verdict, findings, risks
 ```
 
-`<type>` ∈ `sequence | architecture | data | state`. `<feature>` is kebab-case. Committing `.feature-verify/` is the user's choice (asked in step 0).
+`<type>` ∈ `sequence | architecture | data | state`. `<feature>` and `<flow>` are kebab-case. Committing `.feature-verify/` is the user's choice (asked in step 0).
 
 ## Provenance comments (all diagram files)
 
@@ -85,11 +89,16 @@ Put provenance on a Mermaid comment line **directly after** the element it belon
 
 - `#symbol` must literally appear within ±3 lines of the line (function, route string, table, column, enum value).
 - Elements that need provenance: sequence messages, state transitions (except from/to `[*]`), architecture nodes, data entities (relationships are exempt). Structure lines (`participant`, `alt`, `end`, `box`, `subgraph`…) don't.
+- **Drill-down** (sequence): put `%% @drill <flow>` on its own comment line after a message (next to its `@ref`) to link it to `<kind>.sequence.<flow>.mmd`. In the dashboard that step shows ⤵ and opens the flow on click; a breadcrumb leads back. Every target must exist (`compare.mjs` checks).
 - HTTP calls are written `METHOD /path` in labels (`POST /api/login`); reply labels start with the status code (`401 unauthorized`). Both are matched between intended and code.
 
 ## Diagram style guide (diagrams must read well, not just parse)
 
-- **Sequence**: ≤ 8 participants. Group with `box Client … end`, `box Server … end`, `box Data … end`, `box External … end`. Name participants by role (`Login page`, `Auth service`, `Postgres`), alias long names. One action per message, ≤ 50 chars. `alt`/`else` for every branch with the condition in words (`alt account locked (5 failures)`), `opt` for optional steps, `Note over X:` only for notable facts or UNCERTAIN.
+- **Sequence — small diagrams, many of them.** A reader must take one in at a glance: **≤ 10 messages and ≤ 5 participants each** (`validate.mjs` warns above that). Split a feature into:
+  - an **overview** (`code.sequence.mmd`): only the user's actions and the requests that leave the client — one message per user action, each with `%% @drill <flow>`;
+  - one **flow** per user action / endpoint (`code.sequence.<flow>.mmd`, e.g. `add-to-cart`, `checkout`), from the request to the reply, with its branches. Still too big → move a step's internals into a deeper flow and `@drill` to it (e.g. `cart-add-item`).
+  The same split applies to intended diagrams (`intended.sequence.<flow>.mmd`, same flow names, so Compare pairs them). Name flows after what the user does, not after functions.
+- **Sequence style**: Group with `box Client … end`, `box Server … end`, `box Data … end`, `box External … end`. Name participants by role (`Login page`, `Auth service`, `Postgres`), alias long names. One action per message, ≤ 50 chars. `alt`/`else` for every branch with the condition in words (`alt account locked (5 failures)`), `opt` for optional steps, `Note over X:` only for notable facts or UNCERTAIN.
 - **Architecture**: `flowchart LR`, ≤ 15 nodes, `subgraph` per layer. Shapes carry meaning, and add the class: UI `id(["Login page"]):::ui`, service `id["Auth service"]:::svc`, store `id[("Postgres users")]:::store`, external `id{{"Stripe"}}:::ext`. Label edges with the protocol/endpoint (`-->|POST /api/login|`). Mark doubt `:::assumed`, a missing intended part `:::gap`.
 - **Data**: `erDiagram`, only entities/fields the feature reads or writes; mark written fields in the attribute comment (`string status "written"`). Real column names.
 - **State**: `stateDiagram-v2`, default top-down direction (no `direction LR` — self-loops render badly). States are nouns (`Locked`), transitions are events (`5th failed attempt`).
@@ -98,7 +107,7 @@ Put provenance on a Mermaid comment line **directly after** the element it belon
 
 ## Step 0 — Discover, ask the mode, propose (always first)
 
-1. `node $FV/discover.mjs .` and skim the repo structure to fill gaps (monorepos, custom routing). Note `featureVerify.defaultMode` and each feature's `mode`.
+1. `node $FV/discover.mjs .` and skim the repo structure to fill gaps (monorepos, custom routing, `git.nestedRepos`). Note `featureVerify.defaultMode`, each feature's `mode` and its `stale.state` — `outdated` means code its diagrams point at was edited since they were made (`stale.outdatedIn` lists which diagrams); offer to refresh those first (see Re-runs).
 2. Look for intent that exists (don't read it deeply yet): `node $FV/intent.mjs . --limit 50` (count of the user's own prompts), README/docs/specs, issues. Only to tell the user what is available.
 3. **Ask the user which mode — always, unless already decided.** It is decided only if (a) the user named it in this request (`observe`, "just show me what it does", "check it against the spec"…), or (b) the feature's `feature.json` or the project's `.feature-verify/config.json` sets it. Otherwise ask, even when intent docs exist — having a spec does not mean the user wants to be judged against it. Use the agent's question tool if it has one (Claude Code: AskUserQuestion), else ask in plain text and wait. Ask it like this, with one concrete example per option drawn from *this* project's feature:
 
@@ -111,7 +120,7 @@ Put provenance on a Mermaid comment line **directly after** the element it belon
 
    If intent docs exist but the user picks Observe, that is final: do not read them for this feature. Also offer to remember the choice: for this feature (`feature.json`) or as the project default (`.feature-verify/config.json` → `{"defaultMode": "observe"}`).
 4. Report briefly, then propose:
-   - **What exists**: stack; user-facing features (group endpoints/pages); which already have diagrams, their mode and status.
+   - **What exists**: stack; user-facing features (group endpoints/pages); which already have diagrams, their mode, status, and whether their code changed since.
    - **Plan**: feature(s), the chosen mode, diagram types.
    - **Commit or not**: if `.feature-verify/` is neither ignored nor tracked, ask: `.gitignore`, `.git/info/exclude`, or commit.
 5. **Stop. Wait for confirmation.** Write nothing before it (except `feature.json`/`config.json` if the user asked to remember the mode).
@@ -149,7 +158,7 @@ In plan-first mode, stop here: the user looks at the dashboard (Intent tab + dia
 
 ## Step 3 — Code-derived diagrams
 
-Trace the feature through the actual code: entry (page/route/component) → handlers → services → stores → external APIs → back to UI. Derive from code; don't copy the intended diagrams.
+Trace the feature through the actual code: entry (page/route/component) → handlers → services → stores → external APIs → back to UI. Derive from code; don't copy the intended diagrams. Write the sequence as an overview plus small flows linked with `@drill` (style guide).
 - Include every branch the code really has: validation, catch blocks, retries, early returns, auth guards. Branches in code but not in intent are exactly what the human must see.
 - Unknown from static reading (dynamic dispatch, config-driven) → `Note over X: UNCERTAIN — reason` or a node `id["UNCERTAIN: …"]:::assumed`. Never guess.
 
@@ -206,14 +215,25 @@ Then compare semantically on top of the mechanical output, per type: call order,
 - **findings** (dashboard: "Differences" in verify, "Notes" in observe): where intended and code disagree; in observe mode, notable facts about what the code does.
 - **risks**: what could hurt users or the business, judging from the code — *even if intended and code agree*. One pass over what you already traced. Look for: security (auth bypass, forgeable tokens, injection, missing permission checks, secrets), money / stock (double charge, oversell, wrong totals), data loss or integrity (in-memory state, missing transactions, races, partial writes), privacy (data leaks, enumeration, shared state between users), failure handling (unhandled errors, no retries/timeouts on external calls). Rules: specific to this feature, one concrete sentence on what goes wrong and for whom; `ref` required (`path:line#symbol`); `impact` = harm if it happens. No generic advice ("add tests", "use HTTPS", "consider rate limiting" without a concrete failure). Nothing found → `"risks": []` — don't pad. Don't duplicate a risk as a finding.
 
+When compare passes, snapshot the code the feature points at — this is what later runs compare against to tell the user "code changed since":
+```
+node $FV/stale.mjs record .feature-verify/<feature>
+```
+It needs git (each referenced file is stored as a blob in whichever repo holds it — nested repos and submodules are fine). Files outside any repo are tracked by hash only (whole-file change, no line detail); not in git at all → say staleness is limited.
+
 `mechanical` = the compare.json content. `type` must be set (the dashboard links each item to its diagram).
 Verify mode: `verified` only if compare passes, no open assumptions, no high/medium findings; open assumptions → `partial`; real differences → `mismatch`. Do not soften findings.
 Observe mode: `observed` if compare passes, else `incomplete`. The summary says plainly what the feature does, step by step.
 
 ## Step 6 — Dashboard
 
-`node $FV/dashboard.mjs .feature-verify` → `.feature-verify/index.html`. It refuses to build while any diagram fails to parse — fix, don't `--force`. Tell the user the path (`open .feature-verify/index.html` on macOS) and one line per feature: status + top risk + top difference + open assumptions.
+`node $FV/dashboard.mjs .feature-verify` → `.feature-verify/index.html`. It refuses to build while any diagram fails to parse — fix, don't `--force`. Tell the user the path (`open .feature-verify/index.html` on macOS) and one line per feature: status + top risk + top difference + open assumptions (+ "code changed since" if stale).
 
 ## Re-runs
 
-Code changed → steps 3–6 (update the glossary if names changed). Intent changes only with the user (new prompts, docs, or answers).
+Start with `node $FV/stale.mjs .feature-verify/<feature>`:
+- `fresh` — nothing to redo.
+- `shifted` — only line numbers moved: update each `moved` ref to its `newLine` (same code), re-run checks, re-record.
+- `outdated` — re-read the code behind every `changed`/`gone` ref and redo only the diagrams in `outdatedIn` (plus glossary terms / risks that point there), then steps 5–6 and `stale.mjs record`. Code the feature never referenced isn't tracked; when the change looks larger than the refs, re-trace the whole flow.
+
+Intent changes only with the user (new prompts, docs, or answers).

@@ -1,0 +1,26 @@
+sequenceDiagram
+  box Client
+    participant UI as Shop page
+  end
+  box Server
+    participant API as server.js
+    participant Cart as cart.js
+    participant Store as store.js (memory)
+  end
+  UI->>API: POST /api/checkout
+  %% @ref public/index.html:17#/api/checkout
+  API->>Cart: checkout()
+  %% @ref src/server.js:20#checkout
+  alt cart empty
+    Cart-->>API: 409 empty-cart
+    %% @ref src/cart.js:19#empty-cart
+  else
+    Cart->>Store: stock -= qty for every line (no floor)
+    %% @ref src/cart.js:21#stock
+    Cart->>Store: push order, empty cart
+    %% @ref src/cart.js:23#orders.push
+    Cart-->>API: 201 {orderId, total}
+    %% @ref src/cart.js:24#orderId
+  end
+  API-->>UI: same status + body
+  %% @ref src/server.js:21#send

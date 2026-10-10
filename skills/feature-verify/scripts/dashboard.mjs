@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 // Build .feature-verify/index.html — a single-file dashboard: feature sidebar, tabs per feature
-// (Overview · diagram types · Concepts · Intent), pan/zoom diagram canvas, compare view.
+// (Overview · diagram types · Concepts · Intent), pan/zoom diagram canvas, compare view, small flow diagrams
+// linked by  %% @drill <flow>  (click a message to open its flow; breadcrumb back), and staleness from basis.json.
 // Refuses to build if any diagram fails Mermaid parsing (use --force to build with placeholders).
 // Usage: node dashboard.mjs [.feature-verify] [--force]
 import fs from 'node:fs';
 import path from 'node:path';
-import { TYPES, parseDiagram, diagramType, stripInline, loadIntent, loadMode, loadGlossary } from './lib.mjs';
+import { TYPES, parseDiagram, diagramFlow, stripInline, loadIntent, loadMode, loadGlossary } from './lib.mjs';
+import { check as checkStale } from './stale.mjs';
 import { validateFiles, collectMmd, MERMAID_VERSION } from './validate.mjs';
 
 const args = process.argv.slice(2);
@@ -40,22 +42,24 @@ for (const d of fs.readdirSync(dir, { withFileTypes: true }).filter(d => d.isDir
   const fd = path.join(dir, d.name);
   const mode = loadMode(fd);
   const names = fs.readdirSync(fd);
+  const stale = fs.existsSync(path.join(fd, 'basis.json')) ? checkStale(fd) : null;
+  const staleRef = new Map((stale?.refs || []).map(r => [r.from + '|' + r.file + '|' + r.line, { status: r.status, newLine: r.newLine || null }]));
   const diagrams = {};
   for (const t of TYPES) {
-    const pick = (re, kind) => names.filter(n => re.test(n)).sort().map(n => {
+    // main diagram (no flow name) first, then flows by name
+    const pick = (re, kind) => names.filter(n => re.test(n)).sort((a, b) => (diagramFlow(a) ? 1 : 0) - (diagramFlow(b) ? 1 : 0) || a.localeCompare(b)).map(n => {
       const full = path.join(fd, n);
       const raw = fs.readFileSync(full, 'utf8');
       const err = invalid.get(full);
       const elements = parseDiagram(raw, t).map(e => ({
-        text: e.text, srcs: e.srcs, assumed: e.assumed, rel: !!e.isRelationship,
-        refs: e.refs.map(r => ({ file: r.file, line: r.line, symbol: r.symbol, abs: path.resolve(projectRoot, r.file) })),
+        text: e.text, srcs: e.srcs, assumed: e.assumed, rel: !!e.isRelationship, mmdLine: e.mmdLine, drill: e.drill || null,
+        refs: e.refs.map(r => ({ file: r.file, line: r.line, symbol: r.symbol, abs: path.resolve(projectRoot, r.file), stale: staleRef.get(n + '|' + path.relative(projectRoot, path.resolve(projectRoot, r.file)) + '|' + r.line) || null })),
       }));
-      const label = kind;
-      return { name: n, label, src: stripInline(raw), elements, error: err ? { line: err.line, message: err.message, sourceLine: err.sourceLine } : null };
+      return { name: n, label: kind, flow: diagramFlow(n), src: stripInline(raw), elements, error: err ? { line: err.line, message: err.message, sourceLine: err.sourceLine } : null };
     });
     const entry = {
-      intended: mode === 'observe' ? [] : pick(new RegExp(`^intended\\.${t}\\.mmd$`), 'intended'),
-      code: pick(new RegExp(`^code\\.${t}\\.mmd$`), 'code'),
+      intended: mode === 'observe' ? [] : pick(new RegExp(`^intended\\.${t}(\\.[\\w-]+)?\\.mmd$`), 'intended'),
+      code: pick(new RegExp(`^code\\.${t}(\\.[\\w-]+)?\\.mmd$`), 'code'),
     };
     if (entry.intended.length || entry.code.length) diagrams[t] = entry;
   }
@@ -69,7 +73,9 @@ for (const d of fs.readdirSync(dir, { withFileTypes: true }).filter(d => d.isDir
   let spec = null; try { spec = fs.readFileSync(path.join(fd, 'spec.md'), 'utf8'); } catch {}
   if (Object.keys(diagrams).length || report || spec) {
     const glossary = (loadGlossary(fd)?.terms || []).filter(t => t.term && t.meaning).map(t => ({ ...t, link: resolveRef(String(t.ref || '').split('#')[0]) }));
-    features.push({ name: d.name, mode, glossary, diagrams, report, checks, spec: mode === 'observe' ? null : spec, intent: mode === 'observe' ? null : loadIntent(fd) });
+    if (stale?.state === 'outdated') console.error(`warning: ${d.name}: code changed since its diagrams were made (${stale.counts.changed} changed, ${stale.counts.gone} gone) — node stale.mjs ${path.relative(process.cwd(), fd)}`);
+    if (stale) for (const r of stale.refs) { const l = resolveRef(r.file + ':' + (r.newLine || r.line)); if (l) r.link = l; }
+    features.push({ name: d.name, mode, glossary, diagrams, report, checks, stale, spec: mode === 'observe' ? null : spec, intent: mode === 'observe' ? null : loadIntent(fd) });
   }
 }
 
@@ -259,6 +265,24 @@ pre.block { margin:0 16px 16px; background:var(--sunken); border:1px solid var(-
 .termdef { flex-basis:100%; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:8px 12px; color:var(--text); font-size:13px; }
 abbr.term { text-decoration:underline dotted var(--muted); text-underline-offset:3px; cursor:help; }
 .empty { padding:60px 20px; text-align:center; color:var(--muted); }
+.flownav { display:grid; gap:8px; margin-bottom:10px; }
+.crumbs { display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:14px; }
+.crumbs .linkbtn { font-size:14px; }
+.crumbs .sep { color:var(--faint); }
+.flows { display:flex; flex-wrap:wrap; gap:4px; align-items:center; font-size:12px; color:var(--muted); }
+.flows > span { margin-right:4px; }
+.hint { font-size:12px; color:var(--muted); }
+.stage .fv-drill { cursor:pointer; }
+.stage text.fv-drill { fill:var(--accent) !important; text-decoration:underline; text-underline-offset:3px; }
+.stage line.fv-drill, .stage path.fv-drill { stroke:var(--accent) !important; }
+.stage .fv-hit.fv-hit { stroke:transparent !important; stroke-width:16px !important; fill:none !important; pointer-events:stroke; cursor:pointer; }
+.tag.stale { background:var(--warn-soft); color:var(--warn); }
+.tag.stale.bad { background:var(--bad-soft); color:var(--bad); }
+.pill.stale { cursor:pointer; border:0; }
+details.moved > summary { cursor:pointer; padding:4px 16px 12px; font-size:12px; color:var(--muted); }
+.stage text.fv-stale { fill:var(--bad) !important; }
+.stage line.fv-stale, .stage path.fv-stale { stroke:var(--bad) !important; stroke-dasharray:6 3; }
+.chip .sdot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--bad); margin-left:5px; vertical-align:middle; }
 
 @media (max-width: 980px) {
   .app { grid-template-columns:1fr; }
@@ -392,7 +416,7 @@ function renderList() {
     if (filter !== 'all' && statusOf(f) !== filter) continue;
     if (query && !f.name.toLowerCase().includes(query)) continue;
     nav.append(h('button', { class: 'fitem', 'aria-current': String(f.name === cur), onclick: () => go(f.name) },
-      h('span', { class: 'dot ' + statusOf(f), title: statusOf(f) }), h('span', { class: 'n' }, f.name, h('span', { class: 'appr' }, (f.mode === 'observe' ? 'observe' : statusOf(f)) + ((f.report?.risks || []).filter(r => r.impact === 'high').length ? ' · ' + f.report.risks.filter(r => r.impact === 'high').length + ' high risk' : '')))));
+      h('span', { class: 'dot ' + statusOf(f), title: statusOf(f) }), h('span', { class: 'n' }, f.name, h('span', { class: 'appr' }, (f.mode === 'observe' ? 'observe' : statusOf(f)) + (f.stale?.state === 'outdated' ? ' · code changed' : '') + ((f.report?.risks || []).filter(r => r.impact === 'high').length ? ' · ' + f.report.risks.filter(r => r.impact === 'high').length + ' high risk' : '')))));
   }
   if (!nav.children.length) nav.append(h('div', { class: 'appr', style: 'padding:10px' }, 'No matching features.'));
 }
@@ -400,10 +424,20 @@ document.getElementById('q').addEventListener('input', e => { query = e.target.v
 
 // ---------- routing: #/feature/tab/view ----------
 function parseRoute() {
-  const [feature, tab, view] = decodeURIComponent(location.hash.replace(/^#\/?/, '')).split('/');
-  return { feature: feature || D.features[0]?.name, tab: tab || 'overview', view };
+  const [feature, tab, view, flow] = decodeURIComponent(location.hash.replace(/^#\/?/, '')).split('/');
+  return { feature: feature || D.features[0]?.name, tab: tab || 'overview', view, flow: flow || '' };
 }
-const go = (feature, tab = 'overview', view) => { location.hash = '#/' + [feature, tab, view].filter(Boolean).map(encodeURIComponent).join('/'); };
+// #/feature/tab/view/flow — flow is the diagram's flow name ('' = the main diagram)
+const go = (feature, tab = 'overview', view, flow) => {
+  const segs = [feature, tab, view, flow];
+  while (segs.length && !segs[segs.length - 1]) segs.pop();
+  location.hash = '#/' + segs.map(x => encodeURIComponent(x || '')).join('/');
+};
+const flowLabel = (fl, multi) => fl ? fl.replace(/[-_]+/g, ' ').replace(/^./, c => c.toUpperCase()) : multi ? 'Overview' : 'Main';
+const STALE = {
+  outdated: ['code changed', 'Code the diagrams point at was edited since they were made. Ask the agent to re-run this feature.'],
+  shifted: ['code moved', 'Referenced files were edited, but not at the lines the diagrams point at (line numbers may have moved).'],
+};
 addEventListener('hashchange', route);
 
 function route() {
@@ -414,7 +448,8 @@ function route() {
   const f = D.features.find(x => x.name === r.feature) || D.features[0];
   const st = statusOf(f);
   main.append(h('header', { class: 'fhead' }, h('h1', {}, f.name), h('span', { class: 'pill ' + st }, st),
-    f.mode === 'observe' ? h('span', { class: 'pill mode', title: 'Shows what the code does. Nothing is checked against a spec.' }, 'observe mode') : null));
+    f.mode === 'observe' ? h('span', { class: 'pill mode', title: 'Shows what the code does. Nothing is checked against a spec.' }, 'observe mode') : null,
+    STALE[f.stale?.state] ? h('button', { class: 'pill stale ' + (f.stale.state === 'outdated' ? 'mismatch' : 'partial'), title: STALE[f.stale.state][1], onclick: () => go(f.name) }, STALE[f.stale.state][0]) : null));
   if (f.report?.summary) main.append(h('p', { class: 'summary' }, f.report.summary));
 
   const tabs = [['overview', 'Overview']];
@@ -432,7 +467,7 @@ function route() {
   if (tab === 'overview') overview(f, body);
   else if (tab === 'intent') intentTab(f, body);
   else if (tab === 'concepts') conceptsTab(f, body);
-  else diagramTab(f, tab, r.view, body);
+  else diagramTab(f, tab, r.view, r.flow, body);
   main.scrollTop = 0;
 }
 
@@ -455,12 +490,17 @@ function checkRows(f) {
   const c = f.checks || {};
   const rows = [];
   const row = (state, k, v) => rows.push(h('li', {}, h('span', { class: 'ic ' + state }, { ok: '✓', bad: '✕', warn: '!', na: '–' }[state]), h('span', { class: 'k' }, k), h('span', { class: 'v' }, v)));
-  if (!f.checks) { row('na', 'Mechanical checks', 'not run yet — run compare.mjs'); return rows; }
+  const st = f.stale;
+  const staleRow = () => !st || st.state === 'unknown' ? row('na', 'Code since diagrams', 'not tracked — run stale.mjs record after the checks pass')
+    : row({ fresh: 'ok', shifted: 'warn', outdated: 'bad' }[st.state], 'Code since diagrams', st.state === 'fresh' ? 'unchanged since ' + new Date(st.recordedAt).toLocaleDateString()
+      : st.counts.changed + ' ref(s) changed · ' + st.counts.gone + ' gone · ' + st.counts.moved + ' moved, since ' + new Date(st.recordedAt).toLocaleDateString());
+  if (!f.checks) { row('na', 'Mechanical checks', 'not run yet — run compare.mjs'); staleRow(); return rows; }
   if (f.mode === 'observe') {
     row(c.syntax?.ok ? 'ok' : c.syntax?.unavailable ? 'warn' : 'bad', 'Diagram syntax', c.syntax?.ok ? 'all diagrams parse (' + (c.syntax.parser || 'mermaid') + ')' : c.syntax?.unavailable || (c.syntax?.errors?.length + ' diagram(s) fail to parse'));
     const r = c.refs;
     if (r) row(r.ok ? 'ok' : 'bad', 'Code refs', (r.checked - r.failed.length) + ' of ' + r.checked + ' refs resolve' + (r.missing?.length ? ' · ' + r.missing.length + ' element(s) without a ref' : '') + (r.failed.length ? ' · ' + r.failed.length + ' broken' : ''));
     row('na', 'Intent', 'not checked (observe mode)');
+    staleRow();
     return rows;
   }
   row(c.syntax?.ok ? 'ok' : c.syntax?.unavailable ? 'warn' : 'bad', 'Diagram syntax', c.syntax?.ok ? 'all diagrams parse (' + (c.syntax.parser || 'mermaid') + ')' : c.syntax?.unavailable || (c.syntax?.errors?.length + ' diagram(s) fail to parse'));
@@ -475,6 +515,7 @@ function checkRows(f) {
   if (e) row(e.intendedMissingInCode.length ? 'bad' : 'ok', 'Endpoints', e.intendedMissingInCode.length ? 'missing in code: ' + e.intendedMissingInCode.join(', ') : (e.intended.length ? e.intended.length + ' intended endpoint(s) present in code' : 'no HTTP calls in intended diagrams'));
   const s = c.statuses;
   if (s?.intendedMissingInCode) row(s.intendedMissingInCode.length ? 'bad' : 'ok', 'Status codes', s.intendedMissingInCode.length ? 'never returned by code: ' + s.intendedMissingInCode.join(', ') : 'every intended status appears in code');
+  staleRow();
   return rows;
 }
 
@@ -491,7 +532,27 @@ function risksCard(f) {
           x.type && f.diagrams[x.type] ? h('button', { class: 'linkbtn', onclick: () => go(f.name, x.type) }, 'see ' + x.type + ' →') : null)))))
     : h('p', { class: 'summary', style: 'padding:0 16px 14px' }, 'No feature-specific risks found.'));
 }
+// Where a diagram file lives in the dashboard: code.sequence.add-to-cart.mmd → [sequence, code, add-to-cart]
+const diagramPlace = name => { const m = String(name).match(/^(intended|code)\.(\w+)(?:\.([\w-]+))?\.mmd$/); return m ? [m[2], m[1], m[3] || ''] : null; };
+function staleCard(f) {
+  const st = f.stale;
+  if (!st?.refs?.length) return null;
+  const item = r => { const at = diagramPlace(r.from); return h('li', {},
+      h('span', { class: 'impact ' + (r.status === 'moved' ? 'low' : 'high') }, r.status),
+      h('div', {}, h('div', { class: 'meta', style: 'margin-top:0' },
+        r.link ? fileLink(r.link.abs, r.link.line, r.file + ':' + (r.newLine || r.line)) : h('span', { class: 'mono' }, r.file + ':' + r.line),
+        r.symbol ? h('span', { class: 'mono' }, '#' + r.symbol) : null,
+        r.newLine ? h('span', {}, 'was line ' + r.line) : null,
+        r.reason ? h('span', {}, r.reason) : null,
+        at && f.diagrams[at[0]] ? h('button', { class: 'linkbtn', onclick: () => go(f.name, at[0], at[1], at[2]) }, 'in ' + r.from + ' →') : h('span', { class: 'mono' }, r.from)))); };
+  const hard = st.refs.filter(r => r.status !== 'moved'), moved = st.refs.filter(r => r.status === 'moved');
+  return h('div', { class: 'card riskcard' }, h('h2', {}, 'Code changed since the diagrams' + (hard.length ? ' · ' + hard.length : '')),
+    h('p', { class: 'cardnote' }, (hard.length ? 'These steps may no longer be true. ' : 'The code the diagrams point at is the same; only line numbers moved. ') + 'Ask the agent to re-run this feature to update them.'),
+    hard.length ? h('ul', { class: 'risks' }, hard.map(item)) : null,
+    moved.length ? h('details', { class: 'moved' }, h('summary', {}, moved.length + ' ref(s) only moved — same code, new line number'), h('ul', { class: 'risks' }, moved.map(item))) : null);
+}
 function overview(f, body) {
+  const sc = staleCard(f); if (sc) body.append(sc);
   const rc = risksCard(f); if (rc) body.append(rc);
   const left = h('div', { class: 'stack' });
   left.append(h('div', { class: 'card' }, h('h2', {}, 'Checks'), h('ul', { class: 'checks' }, checkRows(f))));
@@ -508,7 +569,7 @@ function overview(f, body) {
   const cov = h('table', { class: 'matrix' }, h('tr', {}, h('th', {}, ''), cols.map(k => h('th', {}, k))),
     TYPES.map(t => { const d = f.diagrams[t]; const skipped = f.report?.skipped?.[t];
       return h('tr', {}, h('td', {}, TYPE_LABEL[t]), cols.map(k => h('td', {},
-        d && d[k].length ? h('button', { class: 'yes', title: d[k].map(x => x.name).join(', '), onclick: () => go(f.name, t, k) }, '✓')
+        d && d[k].length ? h('button', { class: 'yes', title: d[k].map(x => x.name).join(', '), onclick: () => go(f.name, t, k) }, '✓' + (d[k].length > 1 ? ' ' + d[k].length : ''))
         : h('span', { class: 'no', title: skipped || '' }, skipped && k === cols[0] ? 'skipped' : '—')))); }));
   right.append(h('div', { class: 'card' }, h('h2', {}, 'Coverage'), cov,
     f.report?.skipped && Object.keys(f.report.skipped).length ? h('p', { class: 'summary', style: 'padding:0 16px 14px;font-size:12px' }, 'Skipped: ' + Object.entries(f.report.skipped).map(([k, v]) => k + ' (' + v + ')').join(', ')) : null));
@@ -517,52 +578,76 @@ function overview(f, body) {
 
 // ---------- diagram tab ----------
 let seq = 0;
-function diagramTab(f, type, view, body) {
+function diagramTab(f, type, view, flow, body) {
   const d = f.diagrams[type];
-  const kinds = ['intended', 'code'].filter(k => d[k].length);
+  const all = ['intended', 'code'].flatMap(k => d[k]);
+  const flows = [...new Set(all.map(dg => dg.flow))].sort((a, b) => (a ? 1 : 0) - (b ? 1 : 0) || a.localeCompare(b));
+  const multi = flows.length > 1;
+  if (!flows.includes(flow)) flow = flows[0];
+  const at = k => d[k].find(dg => dg.flow === flow);
+  const kinds = ['intended', 'code'].filter(k => at(k));
   const valid = KINDS(f).length > 1 ? [...KINDS(f), 'compare'] : KINDS(f);
-  if (!valid.includes(view) || (view !== 'compare' && !d[view]?.length)) view = kinds.length > 1 ? 'compare' : kinds[0];
+  if (!valid.includes(view) || (view !== 'compare' && !at(view)) || (view === 'compare' && kinds.length < 2)) view = kinds.length > 1 ? 'compare' : kinds[0];
   const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'View' }, valid.map(k =>
-    h('button', { 'aria-pressed': String(k === view), disabled: k !== 'compare' && !d[k].length || (k === 'compare' && kinds.length < 2), onclick: () => go(f.name, type, k) }, k[0].toUpperCase() + k.slice(1))));
+    h('button', { 'aria-pressed': String(k === view), disabled: k !== 'compare' && !at(k) || (k === 'compare' && kinds.length < 2), onclick: () => go(f.name, type, k, flow) }, k[0].toUpperCase() + k.slice(1))));
   const zoomCtl = h('div', { class: 'zoom' });
   body.append(h('div', { class: 'toolbar' }, seg, zoomCtl));
 
-  const options = kinds.flatMap(k => d[k].map((dg, i) => ({ key: k + ':' + i, kind: k, dg, label: k[0].toUpperCase() + k.slice(1) })));
+  // Small flow diagrams: breadcrumb back up the @drill chain, and every flow one click away.
+  const onDrill = target => go(f.name, type, view, target);
+  if (multi) {
+    const parent = new Map();
+    for (const dg of all) for (const e of dg.elements) if (e.drill && e.drill !== dg.flow && !parent.has(e.drill)) parent.set(e.drill, dg.flow);
+    const chain = [flow];
+    while (parent.has(chain[0]) && !chain.includes(parent.get(chain[0]))) chain.unshift(parent.get(chain[0]));
+    const hasDrill = kinds.some(k => at(k).elements.some(e => e.drill));
+    body.append(h('div', { class: 'flownav' },
+      h('nav', { class: 'crumbs', 'aria-label': 'Diagram path' }, chain.map((fl, i) => i < chain.length - 1
+        ? [h('button', { class: 'linkbtn', onclick: () => onDrill(fl) }, flowLabel(fl, true)), h('span', { class: 'sep', 'aria-hidden': 'true' }, '›')]
+        : h('b', { 'aria-current': 'page' }, flowLabel(fl, true))),
+        hasDrill ? h('span', { class: 'hint' }, ' · click a ⤵ step to open it') : null),
+      h('div', { class: 'flows' }, h('span', {}, flows.length + ' diagrams:'), flows.map(fl => {
+        const changed = all.some(dg => dg.flow === fl && f.stale?.outdatedIn?.includes(dg.name));
+        return h('button', { class: 'chip', 'aria-pressed': String(fl === flow), onclick: () => onDrill(fl), title: changed ? 'Code changed since this diagram was made' : null }, flowLabel(fl, true), changed ? h('span', { class: 'sdot', 'aria-label': 'code changed' }) : null);
+      }))));
+  }
+
+  const options = ['intended', 'code'].flatMap(k => d[k].map(dg => ({ key: k + ':' + dg.name, kind: k, dg, label: k[0].toUpperCase() + k.slice(1) + (multi ? ' · ' + flowLabel(dg.flow, true) : '') })));
   let picks;
   if (view === 'compare') {
-    const saved = (store.get('fv-cmp-' + type, '') || '').split('|');
-    const valid = k => options.some(o => o.key === k);
-    const left = valid(saved[0]) ? saved[0] : options[0].key;
-    const right = valid(saved[1]) && saved[1] !== left ? saved[1] : (options.find(o => o.kind === 'code' && o.key !== left) || options.find(o => o.key !== left)).key;
+    const saved = (store.get('fv-cmp-' + type + '-' + flow, '') || '').split('|');
+    const ok = k => options.some(o => o.key === k);
+    const left = ok(saved[0]) ? saved[0] : 'intended:' + at('intended').name;
+    const right = ok(saved[1]) && saved[1] !== left ? saved[1] : 'code:' + at('code').name;
     picks = [left, right];
-  } else picks = d[view].map((_, i) => view + ':' + i);
+  } else picks = [view + ':' + at(view).name];
   const panes = h('div', { class: 'panes n' + Math.min(picks.length, 2) });
   const canvases = [];
   picks.forEach((key, idx) => {
     const o = options.find(x => x.key === key);
     const c = h('div', { class: 'canvas', tabindex: '0', 'aria-label': o.label + ' ' + type + ' diagram' });
     const title = view === 'compare'
-      ? h('select', { 'aria-label': 'Pane ' + (idx + 1), onchange: e => { picks[idx] = e.target.value; store.set('fv-cmp-' + type, picks.join('|')); route(); } },
+      ? h('select', { 'aria-label': 'Pane ' + (idx + 1), onchange: e => { picks[idx] = e.target.value; store.set('fv-cmp-' + type + '-' + flow, picks.join('|')); route(); } },
           options.map(x => h('option', { value: x.key, selected: x.key === key }, x.label)))
       : h('b', {}, o.label);
     panes.append(h('div', { class: 'card pane' }, h('div', { class: 'pane-h' }, title, h('span', { class: 'mono' }, o.dg.name)), c));
-    canvases.push(mountCanvas(c, o.dg));
+    canvases.push(mountCanvas(c, o.dg, type === 'sequence' ? onDrill : null));
   });
   body.append(panes);
   // zoom controls drive every visible canvas together
   const zl = h('span', {}, '');
-  const all = fn => () => { canvases.forEach(cv => cv && fn(cv)); zl.textContent = Math.round((canvases[0]?.scale() || 1) * 100) + '%'; };
-  zoomCtl.append(h('button', { class: 'iconbtn', title: 'Zoom out (−)', onclick: all(cv => cv.zoom(1 / 1.2)) }, '−'), zl,
-    h('button', { class: 'iconbtn', title: 'Zoom in (+)', onclick: all(cv => cv.zoom(1.2)) }, '+'),
-    h('button', { class: 'iconbtn', title: 'Fit (0)', onclick: all(cv => cv.fit()) }, 'Fit'),
-    h('button', { class: 'iconbtn', title: 'Actual size', onclick: all(cv => cv.setScale(1)) }, '1:1'));
+  const zoomAll = fn => () => { canvases.forEach(cv => cv && fn(cv)); zl.textContent = Math.round((canvases[0]?.scale() || 1) * 100) + '%'; };
+  zoomCtl.append(h('button', { class: 'iconbtn', title: 'Zoom out (−)', onclick: zoomAll(cv => cv.zoom(1 / 1.2)) }, '−'), zl,
+    h('button', { class: 'iconbtn', title: 'Zoom in (+)', onclick: zoomAll(cv => cv.zoom(1.2)) }, '+'),
+    h('button', { class: 'iconbtn', title: 'Fit (0)', onclick: zoomAll(cv => cv.fit()) }, 'Fit'),
+    h('button', { class: 'iconbtn', title: 'Actual size', onclick: zoomAll(cv => cv.setScale(1)) }, '1:1'));
   Promise.all(canvases.map(cv => cv?.ready)).then(() => { zl.textContent = Math.round((canvases[0]?.scale() || 1) * 100) + '%'; });
-  onkeydown = e => { if (e.target.closest('input')) return; if (e.key === '+' || e.key === '=') all(cv => cv.zoom(1.2))(); if (e.key === '-') all(cv => cv.zoom(1 / 1.2))(); if (e.key === '0') all(cv => cv.fit())(); };
+  onkeydown = e => { if (e.target.closest('input')) return; if (e.key === '+' || e.key === '=') zoomAll(cv => cv.zoom(1.2))(); if (e.key === '-') zoomAll(cv => cv.zoom(1 / 1.2))(); if (e.key === '0') zoomAll(cv => cv.fit())(); };
 
   if (type === 'sequence') body.append(diffBar(f));
   body.append(termBar(f, type, picks.map(k => options.find(x => x.key === k).dg.src).join('\n')));
   // element details for the single view (or the code+intended pair in compare)
-  for (const key of picks) { const o = options.find(x => x.key === key); if (o.dg.elements.length) body.append(elementTable(f, o.kind, o.dg)); }
+  for (const key of picks) { const o = options.find(x => x.key === key); if (o.dg.elements.length) body.append(elementTable(f, o.kind, o.dg, onDrill)); }
 }
 
 function diffBar(f) {
@@ -587,12 +672,14 @@ function prettyEl(text) {
   if (m) return [h('span', { class: 'from' }, 'entity'), m[1]];
   return [text];
 }
-function elementTable(f, kind, dg) {
+function elementTable(f, kind, dg, onDrill) {
   const srcs = new Map((f.intent?.sources || []).map(s => [s.id, s]));
   const asm = new Map((f.intent?.assumptions || []).map(a => [a.id, a]));
-  const rows = dg.elements.map(e => h('tr', {}, h('td', {}, prettyEl(e.text).map(x => typeof x === 'string' ? termify(f, x) : x)),
+  const staleTag = st => !st ? null : h('span', { class: 'tag stale' + (st.status === 'moved' ? '' : ' bad'), title: st.status === 'moved' ? 'Same code, now at line ' + st.newLine : 'This code was edited after the diagram was made' }, st.status === 'moved' ? 'moved → ' + st.newLine : st.status);
+  const rows = dg.elements.map(e => h('tr', {}, h('td', {}, prettyEl(e.text).map(x => typeof x === 'string' ? termify(f, x) : x),
+      e.drill && onDrill ? h('div', {}, h('button', { class: 'linkbtn', onclick: () => onDrill(e.drill) }, '⤵ open ' + flowLabel(e.drill, true))) : null),
     kind === 'code'
-      ? h('td', {}, e.rel && !e.refs.length ? h('span', { class: 'from' }, 'relationship (follows from the entities)') : e.refs.length ? e.refs.map(r => h('div', {}, fileLink(r.abs, r.line, r.file + ':' + r.line), r.symbol ? h('span', { class: 'mono', style: 'color:var(--muted)' }, '  #' + r.symbol) : null)) : h('span', { class: 'tag missing' }, 'no ref'))
+      ? h('td', {}, e.rel && !e.refs.length ? h('span', { class: 'from' }, 'relationship (follows from the entities)') : e.refs.length ? e.refs.map(r => h('div', {}, fileLink(r.abs, r.line, r.file + ':' + r.line), r.symbol ? h('span', { class: 'mono', style: 'color:var(--muted)' }, '  #' + r.symbol) : null, ' ', staleTag(r.stale))) : h('span', { class: 'tag missing' }, 'no ref'))
       : h('td', {}, e.srcs.map(id => h('span', { class: 'tag', title: srcs.get(id)?.quote || 'unknown source' }, id)), e.assumed.map(id => h('span', { class: 'tag assumed', title: asm.get(id)?.text || '' }, id + ' · assumed')),
           !e.srcs.length && !e.assumed.length ? h('span', { class: 'tag missing' }, 'unsourced') : null,
           e.srcs.length === 1 && srcs.get(e.srcs[0]) ? h('div', { style: 'color:var(--muted);font-size:12px' }, '“' + srcs.get(e.srcs[0]).quote + '”') : null)));
@@ -601,7 +688,34 @@ function elementTable(f, kind, dg) {
 }
 
 // Pan / zoom canvas around one rendered Mermaid SVG.
-function mountCanvas(el, dg) {
+// Sequence messages with  %% @drill <flow>  become clickable; messages whose code changed since the diagram was made turn red.
+// Mermaid draws, per message in source order, its label text(s) (.messageText, several when wrapped) followed by its
+// line (.messageLine0/1), so the n-th line is the n-th element.
+function hookMessages(svg, dg, onDrill) {
+  const msgs = []; let texts = [];
+  for (const n of svg.querySelectorAll('.messageText, .messageLine0, .messageLine1')) {
+    if (n.classList.contains('messageText')) texts.push(n); else { msgs.push({ line: n, texts }); texts = []; }
+  }
+  if (msgs.length !== dg.elements.length) return; // unexpected layout — the element table still links every flow
+  dg.elements.forEach((e, i) => {
+    const { line, texts } = msgs[i];
+    const st = e.refs.find(r => r.stale && r.stale.status !== 'moved')?.stale;
+    if (st) for (const n of [line, ...texts]) {
+      n.classList.add('fv-stale');
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'title'); t.textContent = 'Code ' + st.status + ' since this diagram was made'; n.append(t);
+    }
+    if (!e.drill || !onDrill) return;
+    const hit = line.cloneNode(false);
+    hit.removeAttribute('marker-end'); hit.removeAttribute('marker-start'); hit.removeAttribute('style'); hit.setAttribute('class', 'fv-hit');
+    line.after(hit);
+    hit.setAttribute('data-drill', e.drill);
+    for (const n of [line, ...texts]) {
+      n.classList.add('fv-drill'); n.setAttribute('data-drill', e.drill);
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'title'); t.textContent = 'Open ' + flowLabel(e.drill, true); n.append(t);
+    }
+  });
+}
+function mountCanvas(el, dg, onDrill) {
   if (dg.error) {
     el.append(h('div', { class: 'placeholder err' }, h('b', {}, 'This diagram has a syntax error and was not rendered.'), h('p', {}, (dg.error.line ? 'Line ' + dg.error.line + ': ' : '') + dg.error.message), dg.error.sourceLine ? h('pre', {}, dg.error.sourceLine) : null));
     el.style.cursor = 'default'; return null;
@@ -624,9 +738,13 @@ function mountCanvas(el, dg) {
   };
   api.ready = (async () => {
     try {
-      const { svg } = await mermaid.render('fv' + (++seq), decorate(dg.src));
+      let src = dg.src;
+      const drills = onDrill ? dg.elements.filter(e => e.drill) : [];
+      if (drills.length) { const ls = src.split('\n'); for (const e of drills) ls[e.mmdLine - 1] = ls[e.mmdLine - 1].replace(/\s*$/, ' ⤵'); src = ls.join('\n'); }
+      const { svg } = await mermaid.render('fv' + (++seq), decorate(src));
       stage.innerHTML = svg;
       const svgEl = stage.querySelector('svg');
+      if (dg.flow != null && /^sequenceDiagram/.test(dg.src.trimStart())) hookMessages(svgEl, dg, onDrill);
       const vb = svgEl.viewBox?.baseVal;
       w = vb?.width || svgEl.getBBox().width; ht = vb?.height || svgEl.getBBox().height;
       svgEl.setAttribute('width', w); svgEl.setAttribute('height', ht); svgEl.style.maxWidth = 'none';
@@ -639,7 +757,14 @@ function mountCanvas(el, dg) {
   el.addEventListener('pointerdown', e => { drag = { px: e.clientX, py: e.clientY, x, y }; el.setPointerCapture(e.pointerId); el.classList.add('grabbing'); });
   el.addEventListener('pointermove', e => { if (!drag) return; x = drag.x + e.clientX - drag.px; y = drag.y + e.clientY - drag.py; apply(); });
   const end = () => { drag = null; el.classList.remove('grabbing'); };
-  el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+  // a click (not a drag) on a ⤵ step opens its flow; pointer capture hides the real target, so look it up by position
+  el.addEventListener('pointerup', e => {
+    const d = drag; end();
+    if (!d || !onDrill || Math.hypot(e.clientX - d.px, e.clientY - d.py) > 4) return;
+    const t = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-drill]');
+    if (t) onDrill(t.getAttribute('data-drill'));
+  });
+  el.addEventListener('pointercancel', end);
   el.addEventListener('wheel', e => {
     e.preventDefault();
     const r = el.getBoundingClientRect();

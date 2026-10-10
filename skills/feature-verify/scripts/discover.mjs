@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // Scan a project: stack, frameworks, routes/pages/endpoints, schema files, test & tracing tooling,
-// existing .feature-verify features. Heuristic — the agent fills gaps by reading the repo.
+// existing .feature-verify features (with staleness: has their code changed since?), nested git repos. Heuristic — the agent fills gaps by reading the repo.
 // Usage: node discover.mjs [projectRoot] [--max-routes 300]
 import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { loadMode } from './lib.mjs';
+import { check as checkStale } from './stale.mjs';
 
 const root = path.resolve(process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : '.');
 const mi = process.argv.indexOf('--max-routes');
@@ -134,7 +135,9 @@ if (fs.existsSync(fvDir)) for (const d of fs.readdirSync(fvDir, { withFileTypes:
   const fd = path.join(fvDir, d.name);
   const diagrams = fs.readdirSync(fd).filter(f => f.endsWith('.mmd'));
   let report = null; try { report = JSON.parse(fs.readFileSync(path.join(fd, 'report.json'), 'utf8')); } catch {}
-  features.push({ feature: d.name, mode: loadMode(fd), hasSpec: fs.existsSync(path.join(fd, 'spec.md')), diagrams, status: report?.status || 'no report', generatedAt: report?.generatedAt || null });
+  const st = checkStale(fd);
+  const stale = st.state === 'unknown' ? { state: 'unknown' } : { state: st.state, counts: st.counts, outdatedIn: st.outdatedIn, since: st.recordedAt };
+  features.push({ feature: d.name, mode: loadMode(fd), hasSpec: fs.existsSync(path.join(fd, 'spec.md')), diagrams, status: report?.status || 'no report', generatedAt: report?.generatedAt || null, stale });
 }
 
 let git = { repo: false };
@@ -144,6 +147,14 @@ try {
   try { execSync('git check-ignore -q .feature-verify', { cwd: root, stdio: 'ignore' }); git.featureVerifyIgnored = true; } catch { git.featureVerifyIgnored = false; }
   git.featureVerifyTracked = execSync('git ls-files .feature-verify', { cwd: root }).toString().trim().length > 0;
 } catch {}
+// Repos below the root (a folder of several projects, submodules): staleness works per file, in whichever repo holds it.
+git.nestedRepos = [];
+(function walk(d, depth) {
+  if (depth > 3) return;
+  let ents = []; try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+  if (d !== root && ents.some(e => e.name === '.git')) git.nestedRepos.push(path.relative(root, d));
+  for (const e of ents) if (e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules' && e.name !== 'vendor') walk(path.join(d, e.name), depth + 1);
+})(root, 0);
 
 const result = {
   root, filesScanned: files.length, truncated: files.length >= MAX_FILES,

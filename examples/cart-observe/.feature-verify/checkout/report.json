@@ -27,6 +27,8 @@
       "sequence": {
         "intended": [],
         "code": [
+          "code.sequence.add-to-cart.mmd",
+          "code.sequence.checkout.mmd",
           "code.sequence.mmd"
         ]
       },
@@ -70,6 +72,11 @@
       "missingMeaning": [],
       "ok": true
     },
+    "drills": {
+      "links": 2,
+      "broken": [],
+      "ok": true
+    },
     "endpoints": null,
     "statuses": {
       "code": [
@@ -80,7 +87,7 @@
         409
       ]
     },
-    "checkedAt": "2026-10-10T10:30:33.281Z",
+    "checkedAt": "2026-10-10T11:26:40.607Z",
     "ok": true
   },
   "generatedAt": "2026-10-10T10:30:32.682044+00:00",
@@ -89,7 +96,7 @@
       "impact": "high",
       "category": "money / stock",
       "type": "sequence",
-      "text": "Overselling: stock is checked per click, not against what is already in the cart, and checkout never re-checks \u2014 adding 2 Lamps with 1 in stock succeeds and checkout drives stock to \u22121.",
+      "text": "Overselling: stock is checked per click, not against what is already in the cart, and checkout never re-checks — adding 2 Lamps with 1 in stock succeeds and checkout drives stock to −1.",
       "ref": "src/cart.js:7#stock"
     },
     {

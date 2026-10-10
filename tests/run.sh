@@ -73,4 +73,38 @@ q node "$FV/compare.mjs" .feature-verify/checkout > "$tmp/cart.json"; code=$?
 [ $code -eq 0 ] && json 'r.mode==="observe" && r.refs.ok && r.glossary.ok' < "$tmp/cart.json" && ok "cart: code diagrams + glossary check out" || bad "cart compare"
 q node "$FV/dashboard.mjs" .feature-verify >/dev/null && ok "cart: dashboard builds" || bad "cart dashboard"
 
+# small flows linked with @drill: every link resolves; a broken one is caught; long diagrams are flagged
+json 'r.drills.ok && r.drills.links===2 && r.coverage.sequence.code.length===3' < "$tmp/cart.json" && ok "cart: overview drills into 2 flows" || bad "cart drills"
+cp .feature-verify/checkout/code.sequence.mmd "$tmp/seq.bak"
+sed -i.x 's/@drill checkout/@drill no-such-flow/' .feature-verify/checkout/code.sequence.mmd && rm -f .feature-verify/checkout/code.sequence.mmd.x
+q node "$FV/compare.mjs" .feature-verify/checkout | json '!r.ok && r.drills.broken.length===1 && r.drills.broken[0].drill==="no-such-flow"' && ok "compare catches a drill to a missing flow" || bad "broken drill"
+cp "$tmp/seq.bak" .feature-verify/checkout/code.sequence.mmd
+{ echo 'sequenceDiagram'; for i in $(seq 1 12); do echo "  A->>B: step $i"; done; } > "$tmp/long.sequence.mmd"
+q node "$FV/validate.mjs" "$tmp/long.sequence.mmd" | grep -q "12 messages — split into flows" && ok "validate flags a sequence over 10 messages" || bad "sequence size lint"
+grep -q 'hookMessages' .feature-verify/index.html && grep -q '"drill":"add-to-cart"' .feature-verify/index.html && ok "dashboard carries drill links" || bad "drill links in dashboard"
+
+# staleness (git): fresh as committed; edit the code → changed / moved; restore → fresh
+q node "$FV/stale.mjs" .feature-verify >/dev/null && ok "cart: diagrams fresh against the code" || bad "stale fresh"
+cp src/cart.js "$tmp/cart.js.bak"
+{ echo '// new first line'; sed 's/out-of-stock/sold-out/' "$tmp/cart.js.bak"; } > src/cart.js
+q node "$FV/stale.mjs" --json .feature-verify > "$tmp/stale.json"; code=$?
+[ $code -eq 1 ] && json '(s=>s.state==="outdated" && s.refs.some(x=>x.symbol==="out-of-stock"&&x.status==="changed") && s.refs.some(x=>x.symbol==="orderId"&&x.status==="moved"&&x.newLine===25) && s.outdatedIn.includes("code.sequence.add-to-cart.mmd"))(r[0])' < "$tmp/stale.json" \
+  && ok "stale: edited line → changed, shifted lines → moved" || bad "stale outdated"
+q node "$FV/dashboard.mjs" .feature-verify >/dev/null; grep -q '"state":"outdated"' .feature-verify/index.html && ok "dashboard shows code changed" || bad "stale in dashboard"
+cp "$tmp/cart.js.bak" src/cart.js
+q node "$FV/stale.mjs" .feature-verify >/dev/null && ok "stale: restored code is fresh again" || bad "stale restore"
+q node "$FV/dashboard.mjs" .feature-verify >/dev/null
+
+# staleness across nested repos (root is not a repo) and a file outside any repo
+N="$tmp/nest"; mkdir -p "$N/front" "$N/back" "$N/.feature-verify/f"
+seq 1 30 | sed 's/^/a /' > "$N/front/a.js"; seq 1 30 | sed 's/^/b /' > "$N/back/b.js"; printf 'x\ny\n' > "$N/loose.txt"
+(cd "$N/front" && git init -q && git add . && git -c user.email=t@t -c user.name=t commit -qm i) && (cd "$N/back" && git init -q)
+printf 'sequenceDiagram\n  A->>B: one\n  %%%% @ref front/a.js:20#a\n  B->>C: two\n  %%%% @ref back/b.js:10#b\n  C->>D: three\n  %%%% @ref loose.txt:2#y\n' > "$N/.feature-verify/f/code.sequence.mmd"
+(cd "$N" && q node "$FV/stale.mjs" record .feature-verify/f | grep -q "2 in git (front, back), 1 outside git") && ok "stale: records per nested repo" || bad "stale nested record"
+sed -i.x '1i\
+inserted
+' "$N/front/a.js"; sed -i.x 's/^b 10$/b ten/' "$N/back/b.js"; echo z >> "$N/loose.txt"
+(cd "$N" && q node "$FV/stale.mjs" --json .feature-verify) | json '(by=>by("front/a.js").status==="moved" && by("back/b.js").status==="changed" && by("loose.txt").status==="changed" && /not in a git repo/.test(by("loose.txt").reason))(f=>r[0].refs.find(x=>x.file===f))' \
+  && ok "stale: nested repos line-level, non-git file whole-file" || bad "stale nested check"
+
 exit $fail

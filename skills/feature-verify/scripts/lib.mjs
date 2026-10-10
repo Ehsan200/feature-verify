@@ -12,6 +12,7 @@ export const REF_RE = /\[([^\[\]\s]+?):(\d+)(?:#([^\]\s]+))?\]/g;
 const AT_REF_RE = /@ref\s+([^\s:]+?):(\d+)(?:#(\S+))?(?=\s|$)/g;
 const AT_SRC_RE = /@src\s+([\w,\s-]+)/;
 const AT_ASSUMED_RE = /@assumed\s+([\w,\s-]+)/;
+const AT_DRILL_RE = /@drill\s+([\w-]+)/;
 
 function refsInLine(line, mmdLine) {
   const out = [];
@@ -28,9 +29,16 @@ export function extractRefs(text) {
   return text.split('\n').flatMap((l, i) => refsInLine(l, i + 1));
 }
 
+// Diagram files: <kind>.<type>.mmd (the feature's main/overview diagram) or <kind>.<type>.<flow>.mmd (one small flow).
+const FILE_RE = /^(intended|code)\.(sequence|architecture|data|state)(?:\.([\w-]+))?\.mmd$/;
 export function diagramType(file) {
-  const m = path.basename(file).match(/\.(sequence|architecture|data|state)\.mmd$/);
+  const m = path.basename(file).match(/\.(sequence|architecture|data|state)(?:\.[\w-]+)?\.mmd$/);
   return m ? m[1] : null;
+}
+// '' for the main diagram, else the flow name (code.sequence.add-to-cart.mmd → 'add-to-cart').
+export function diagramFlow(file) {
+  const m = path.basename(file).match(FILE_RE);
+  return m ? m[3] || '' : null;
 }
 
 const STRUCTURAL = /^(sequenceDiagram|flowchart|graph|stateDiagram|erDiagram|autonumber|participant|actor|box|end|alt|else|opt|loop|par|and|critical|break|rect|note|activate|deactivate|subgraph|direction|classDef|class|style|linkStyle|title|accTitle|accDescr|state\s+\S+\s*\{|\}|%%)/i;
@@ -55,6 +63,7 @@ export function parseDiagram(text, type) {
     el.refs.push(...refsInLine(t, i + 1));
     const s = t.match(AT_SRC_RE); if (s) el.srcs.push(...s[1].split(/[,\s]+/).filter(Boolean));
     const a = t.match(AT_ASSUMED_RE); if (a) el.assumed.push(...a[1].split(/[,\s]+/).filter(Boolean));
+    const d = t.match(AT_DRILL_RE); if (d) el.drill = d[1];
   };
   lines.forEach((raw, i) => {
     const t = raw.trim();
@@ -99,6 +108,23 @@ export function checkRef(ref, root = process.cwd()) {
 // Elements of a code diagram that lack a ref. Data relationships and architecture edges are exempt.
 export function missingRefs(text, type) {
   return parseDiagram(text, type).filter(e => !e.refs.length && !e.isRelationship && !/UNCERTAIN/.test(e.text)).map(e => ({ mmdLine: e.mmdLine, text: e.text }));
+}
+
+// Drill-down links: a sequence message followed by  %% @drill <flow>  opens <kind>.sequence.<flow>.mmd
+// (same kind first, else the other kind). Every target must exist.
+export function checkDrills(dir, kinds = ['intended', 'code']) {
+  const names = fs.readdirSync(dir).filter(n => FILE_RE.test(n));
+  const flows = k => new Set(names.filter(n => n.startsWith(k + '.sequence.')).map(diagramFlow));
+  const res = { links: 0, broken: [] };
+  for (const n of names.filter(n => diagramType(n) === 'sequence' && kinds.some(k => n.startsWith(k + '.')))) {
+    for (const e of parseDiagram(fs.readFileSync(path.join(dir, n), 'utf8'), 'sequence')) {
+      if (!e.drill) continue;
+      res.links++;
+      if (!kinds.some(k => flows(k).has(e.drill))) res.broken.push({ diagram: n, mmdLine: e.mmdLine, drill: e.drill, reason: `no ${n.split('.')[0]}.sequence.${e.drill}.mmd` });
+    }
+  }
+  res.ok = !res.broken.length;
+  return res;
 }
 
 // ---------- intent ----------
@@ -159,7 +185,7 @@ export function checkIntent(dir, root = process.cwd()) {
   const srcIds = new Map((intent.sources || []).map(s => [s.id, s]));
   const asmIds = new Map((intent.assumptions || []).map(a => [a.id, a]));
   const res = { elements: 0, sourced: 0, assumed: 0, unsourced: [], unknownIds: [], badSources: [], assumptions: [] };
-  for (const f of fs.readdirSync(dir).filter(n => /^intended\.\w+\.mmd$/.test(n))) {
+  for (const f of fs.readdirSync(dir).filter(n => FILE_RE.test(n) && n.startsWith('intended.'))) {
     const type = diagramType(f);
     for (const e of parseDiagram(fs.readFileSync(path.join(dir, f), 'utf8'), type)) {
       res.elements++;

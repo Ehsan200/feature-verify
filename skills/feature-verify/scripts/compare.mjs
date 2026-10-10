@@ -5,13 +5,14 @@
 //  - intent: every intended element cites a source (@src) or declared assumption (@assumed); quotes verified
 //  - endpoints / statuses: HTTP calls and status codes agree between intended and code
 //  - glossary: every term has a meaning; its code ref (if any) resolves
+//  - drills: every  %% @drill <flow>  on a sequence message points at an existing <kind>.sequence.<flow>.mmd
 // Observe mode (feature.json {"mode":"observe"}, project default, or --observe): intended diagrams and
 // intent are ignored; only the code diagrams are checked.
 // Exit 1 if anything fails.
 // Usage: node compare.mjs [--observe] .feature-verify/<feature>
 import fs from 'node:fs';
 import path from 'node:path';
-import { extractEndpoints, extractStatuses, diagramType, checkIntent, checkGlossary, loadMode, TYPES } from './lib.mjs';
+import { extractEndpoints, extractStatuses, diagramType, checkIntent, checkGlossary, checkDrills, loadMode, TYPES } from './lib.mjs';
 import { checkFiles } from './check-refs.mjs';
 import { validateFiles } from './validate.mjs';
 
@@ -36,6 +37,7 @@ const syntax = await validateFiles(Object.values(files).flat());
 const refs = files.code.length ? checkFiles(files.code) : { checked: 0, failed: [], missing: [], ok: false };
 const intent = !observe && files.intended.length ? checkIntent(dir) : null;
 const glossary = checkGlossary(dir);
+const drills = checkDrills(dir, observe ? ['code'] : ['intended', 'code']);
 
 const result = {
   feature: path.basename(path.resolve(dir)),
@@ -45,6 +47,7 @@ const result = {
   refs,
   intent,
   glossary,
+  drills,
   endpoints: observe ? null : {
     intended: sorted(eps.intended), code: sorted(eps.code),
     intendedMissingInCode: minus(eps, 'intended', 'code'),
@@ -57,7 +60,7 @@ const result = {
   },
   checkedAt: new Date().toISOString(),
 };
-result.ok = syntax.ok && refs.ok && glossary.ok && (observe || (
+result.ok = syntax.ok && refs.ok && glossary.ok && drills.ok && (observe || (
   (!intent || intent.ok) && !result.endpoints.intendedMissingInCode.length && !result.statuses.intendedMissingInCode.length));
 console.log(JSON.stringify(result, null, 2));
 process.exit(result.ok ? 0 : 1);

@@ -72,6 +72,14 @@ All scripts are plain Node, zero dependencies, and usable on their own — see h
 
 Feature sidebar with status filters; per feature: **Overview** (risks, differences, checks, coverage), one tab per diagram type with **Intended / Code / Compare** views (pan, zoom, fit), element tables showing where each step comes from (intent quote, or a code link that opens in your editor), **Concepts** (glossary, status codes, how to read each diagram) and **Intent** (spec, verified sources, open assumptions). Light and dark themes.
 
+### Small diagrams, click to open
+
+Sequence diagrams stay small (≤ 10 messages, ≤ 5 participants): an **overview** of what the user does, plus one **flow** per action or endpoint (`code.sequence.add-to-cart.mmd`). A step marked ⤵ opens its flow when clicked; a breadcrumb (and the browser's back button) leads back up. Links are a comment after the step — `%% @drill add-to-cart` — and `compare.mjs` fails on a link to a flow that doesn't exist.
+
+### Has the code changed since?
+
+After the checks pass, `stale.mjs record` stores the code every ref points at (`basis.json`; each file as a git blob in whichever repo holds it, so nested repos and submodules work). Later, `stale.mjs .feature-verify` — also run by `discover` and the dashboard — tells you per ref: **fresh**, **moved** (same code, new line number), **changed** (that line or the one next to it was edited, or its symbol is gone) or **gone**. The dashboard marks the feature "code changed", lists the affected steps, colors them red in the diagram, and the agent redoes only those diagrams on the next run. Files outside any git repo are tracked by hash only (whole-file).
+
 ### Risks vs differences
 
 The Overview has two lists. **Risks**: what could hurt users or the business, judging from the code — even when intent and code agree (e.g. a forgeable login token, overselling, orders lost on restart). Each links to the line it comes from. **Differences** (verify) / **Notes** (observe): where intended and code disagree, or notable facts about what the code does.

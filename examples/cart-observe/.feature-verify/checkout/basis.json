@@ -1,0 +1,297 @@
+{
+  "recordedAt": "2026-10-10T11:26:40.848Z",
+  "files": {
+    "public/index.html": {
+      "blob": "9b6c37bc098c4847823bbbd4a0423017f03af2cd",
+      "repo": "../..",
+      "commit": "1baf2c1ab5ef48ff32a9c82dfcc37566c5912f5d"
+    },
+    "src/server.js": {
+      "blob": "ddd1c5c1a2bc2ecd925feae10d01d98ee209d0eb",
+      "repo": "../..",
+      "commit": "1baf2c1ab5ef48ff32a9c82dfcc37566c5912f5d"
+    },
+    "src/cart.js": {
+      "blob": "e8f7868ccff24d3dc22cb2992d30eebe83bd24b9",
+      "repo": "../..",
+      "commit": "1baf2c1ab5ef48ff32a9c82dfcc37566c5912f5d"
+    },
+    "src/store.js": {
+      "blob": "c36ee062e20fae359b2c5fab4b1e451aad7330db",
+      "repo": "../..",
+      "commit": "1baf2c1ab5ef48ff32a9c82dfcc37566c5912f5d"
+    }
+  },
+  "refs": [
+    {
+      "file": "public/index.html",
+      "line": 5,
+      "symbol": "load",
+      "from": "code.architecture.mmd"
+    },
+    {
+      "file": "src/server.js",
+      "line": 10,
+      "symbol": "createServer",
+      "from": "code.architecture.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 3,
+      "symbol": "addItem",
+      "from": "code.architecture.mmd"
+    },
+    {
+      "file": "src/store.js",
+      "line": 2,
+      "symbol": "products",
+      "from": "code.architecture.mmd"
+    },
+    {
+      "file": "src/store.js",
+      "line": 2,
+      "symbol": "products",
+      "from": "code.data.mmd"
+    },
+    {
+      "file": "src/store.js",
+      "line": 6,
+      "symbol": "cart",
+      "from": "code.data.mmd"
+    },
+    {
+      "file": "src/store.js",
+      "line": 7,
+      "symbol": "orders",
+      "from": "code.data.mmd"
+    },
+    {
+      "file": "public/index.html",
+      "line": 12,
+      "symbol": "/api/cart",
+      "from": "code.sequence.add-to-cart.mmd"
+    },
+    {
+      "file": "src/server.js",
+      "line": 16,
+      "symbol": "addItem",
+      "from": "code.sequence.add-to-cart.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 5,
+      "symbol": "no-such-product",
+      "from": "code.sequence.add-to-cart.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 6,
+      "symbol": "bad-qty",
+      "from": "code.sequence.add-to-cart.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 7,
+      "symbol": "out-of-stock",
+      "from": "code.sequence.add-to-cart.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 9,
+      "symbol": "cart.items",
+      "from": "code.sequence.add-to-cart.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 10,
+      "symbol": "cartView",
+      "from": "code.sequence.add-to-cart.mmd"
+    },
+    {
+      "file": "src/server.js",
+      "line": 17,
+      "symbol": "send",
+      "from": "code.sequence.add-to-cart.mmd"
+    },
+    {
+      "file": "public/index.html",
+      "line": 17,
+      "symbol": "/api/checkout",
+      "from": "code.sequence.checkout.mmd"
+    },
+    {
+      "file": "src/server.js",
+      "line": 20,
+      "symbol": "checkout",
+      "from": "code.sequence.checkout.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 19,
+      "symbol": "empty-cart",
+      "from": "code.sequence.checkout.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 21,
+      "symbol": "stock",
+      "from": "code.sequence.checkout.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 23,
+      "symbol": "orders.push",
+      "from": "code.sequence.checkout.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 24,
+      "symbol": "orderId",
+      "from": "code.sequence.checkout.mmd"
+    },
+    {
+      "file": "src/server.js",
+      "line": 21,
+      "symbol": "send",
+      "from": "code.sequence.checkout.mmd"
+    },
+    {
+      "file": "public/index.html",
+      "line": 6,
+      "symbol": "/api/products",
+      "from": "code.sequence.mmd"
+    },
+    {
+      "file": "src/server.js",
+      "line": 12,
+      "symbol": "products",
+      "from": "code.sequence.mmd"
+    },
+    {
+      "file": "public/index.html",
+      "line": 8,
+      "symbol": "/api/cart",
+      "from": "code.sequence.mmd"
+    },
+    {
+      "file": "src/server.js",
+      "line": 13,
+      "symbol": "cartView",
+      "from": "code.sequence.mmd"
+    },
+    {
+      "file": "public/index.html",
+      "line": 10,
+      "symbol": "onclick",
+      "from": "code.sequence.mmd"
+    },
+    {
+      "file": "public/index.html",
+      "line": 16,
+      "symbol": "checkout",
+      "from": "code.sequence.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 9,
+      "symbol": "cart.items",
+      "from": "code.state.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 7,
+      "symbol": "stock",
+      "from": "code.state.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 22,
+      "symbol": "splice",
+      "from": "code.state.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 19,
+      "symbol": "empty-cart",
+      "from": "code.state.mmd"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 6,
+      "symbol": "qty",
+      "from": "glossary.json"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 21,
+      "symbol": "stock",
+      "from": "glossary.json"
+    },
+    {
+      "file": "src/store.js",
+      "line": 6,
+      "symbol": "cart",
+      "from": "glossary.json"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 3,
+      "symbol": "addItem",
+      "from": "glossary.json"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 13,
+      "symbol": "cartView",
+      "from": "glossary.json"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 7,
+      "symbol": "out-of-stock",
+      "from": "glossary.json"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 6,
+      "symbol": "bad-qty",
+      "from": "glossary.json"
+    },
+    {
+      "file": "src/store.js",
+      "line": 1,
+      "symbol": "In-memory",
+      "from": "glossary.json"
+    },
+    {
+      "file": "public/index.html",
+      "line": 12,
+      "symbol": null,
+      "from": "report.json"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 19,
+      "symbol": null,
+      "from": "report.json"
+    },
+    {
+      "file": "src/cart.js",
+      "line": 7,
+      "symbol": "stock",
+      "from": "report.json"
+    },
+    {
+      "file": "src/store.js",
+      "line": 6,
+      "symbol": "cart",
+      "from": "report.json"
+    },
+    {
+      "file": "src/store.js",
+      "line": 7,
+      "symbol": "orders",
+      "from": "report.json"
+    }
+  ]
+}

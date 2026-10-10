@@ -1,0 +1,31 @@
+sequenceDiagram
+  box Client
+    participant UI as Shop page
+  end
+  box Server
+    participant API as server.js
+    participant Cart as cart.js
+    participant Store as store.js (memory)
+  end
+  UI->>API: POST /api/cart {productId, qty: 1}
+  %% @ref public/index.html:12#/api/cart
+  API->>Cart: addItem(productId, qty)
+  %% @ref src/server.js:16#addItem
+  alt unknown product
+    Cart-->>API: 404 no-such-product
+    %% @ref src/cart.js:5#no-such-product
+  else qty not a positive integer
+    Cart-->>API: 400 bad-qty
+    %% @ref src/cart.js:6#bad-qty
+  else product.stock < qty (this request only)
+    Cart-->>API: 409 out-of-stock
+    %% @ref src/cart.js:7#out-of-stock
+  else
+    Cart->>Store: add or increase cart line
+    %% @ref src/cart.js:9#cart.items
+    Cart-->>API: 200 {lines, total}
+    %% @ref src/cart.js:10#cartView
+  end
+  API-->>UI: same status + body
+  %% @ref src/server.js:17#send
+  Note over Cart,Store: stock is checked per request, not against qty already in the cart

@@ -1,0 +1,178 @@
+{
+  "recordedAt": "2026-10-10T11:33:47.274Z",
+  "files": {
+    "public/index.html": {
+      "blob": "1a4b147149fda8e7b02a4644347786401808764f",
+      "repo": "../..",
+      "commit": "1baf2c1ab5ef48ff32a9c82dfcc37566c5912f5d"
+    },
+    "src/server.js": {
+      "blob": "703bbc8dd02c02e4d3162d4c481c479402e8bd17",
+      "repo": "../..",
+      "commit": "1baf2c1ab5ef48ff32a9c82dfcc37566c5912f5d"
+    },
+    "src/services/auth.js": {
+      "blob": "720b1ab375f734f8717defe886f880f09f4d9532",
+      "repo": "../..",
+      "commit": "1baf2c1ab5ef48ff32a9c82dfcc37566c5912f5d"
+    }
+  },
+  "refs": [
+    {
+      "file": "public/index.html",
+      "line": 5,
+      "symbol": "onclick",
+      "from": "code.architecture.mmd"
+    },
+    {
+      "file": "src/server.js",
+      "line": 6,
+      "symbol": "createServer",
+      "from": "code.architecture.mmd"
+    },
+    {
+      "file": "src/services/auth.js",
+      "line": 3,
+      "symbol": "verifyCredentials",
+      "from": "code.architecture.mmd"
+    },
+    {
+      "file": "src/services/auth.js",
+      "line": 1,
+      "symbol": "users",
+      "from": "code.architecture.mmd"
+    },
+    {
+      "file": "public/index.html",
+      "line": 5,
+      "symbol": "onclick",
+      "from": "code.sequence.mmd"
+    },
+    {
+      "file": "public/index.html",
+      "line": 6,
+      "symbol": "/api/login",
+      "from": "code.sequence.mmd"
+    },
+    {
+      "file": "src/server.js",
+      "line": 12,
+      "symbol": "missing",
+      "from": "code.sequence.mmd"
+    },
+    {
+      "file": "src/server.js",
+      "line": 13,
+      "symbol": "verifyCredentials",
+      "from": "code.sequence.mmd"
+    },
+    {
+      "file": "src/services/auth.js",
+      "line": 5,
+      "symbol": "unknown",
+      "from": "code.sequence.mmd"
+    },
+    {
+      "file": "src/services/auth.js",
+      "line": 7,
+      "symbol": "failed",
+      "from": "code.sequence.mmd"
+    },
+    {
+      "file": "src/services/auth.js",
+      "line": 10,
+      "symbol": "token",
+      "from": "code.sequence.mmd"
+    },
+    {
+      "file": "src/server.js",
+      "line": 14,
+      "symbol": "401",
+      "from": "code.sequence.mmd"
+    },
+    {
+      "file": "src/services/auth.js",
+      "line": 7,
+      "symbol": "failed",
+      "from": "code.state.mmd"
+    },
+    {
+      "file": "src/services/auth.js",
+      "line": 10,
+      "symbol": "token",
+      "from": "code.state.mmd"
+    },
+    {
+      "file": "src/services/auth.js",
+      "line": 3,
+      "symbol": "verifyCredentials",
+      "from": "glossary.json"
+    },
+    {
+      "file": "src/services/auth.js",
+      "line": 7,
+      "symbol": "failed",
+      "from": "glossary.json"
+    },
+    {
+      "file": "src/services/auth.js",
+      "line": 5,
+      "symbol": "unknown",
+      "from": "glossary.json"
+    },
+    {
+      "file": "src/services/auth.js",
+      "line": 1,
+      "symbol": "users",
+      "from": "glossary.json"
+    },
+    {
+      "file": "src/services/auth.js",
+      "line": 7,
+      "symbol": null,
+      "from": "report.json"
+    },
+    {
+      "file": "src/services/auth.js",
+      "line": 7,
+      "symbol": null,
+      "from": "report.json"
+    },
+    {
+      "file": "src/server.js",
+      "line": 12,
+      "symbol": null,
+      "from": "report.json"
+    },
+    {
+      "file": "src/services/auth.js",
+      "line": 7,
+      "symbol": "failed",
+      "from": "report.json"
+    },
+    {
+      "file": "src/services/auth.js",
+      "line": 10,
+      "symbol": "tok-",
+      "from": "report.json"
+    },
+    {
+      "file": "src/services/auth.js",
+      "line": 6,
+      "symbol": "password",
+      "from": "report.json"
+    },
+    {
+      "file": "src/services/auth.js",
+      "line": 5,
+      "symbol": "unknown",
+      "from": "report.json"
+    },
+    {
+      "file": "src/services/auth.js",
+      "line": 1,
+      "symbol": "users",
+      "from": "report.json"
+    }
+  ]
+}

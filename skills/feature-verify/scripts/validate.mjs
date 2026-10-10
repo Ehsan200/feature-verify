@@ -46,8 +46,11 @@ function lint(src, type) {
   const warnings = [];
   const lines = src.split('\n');
   if (type === 'sequence') {
+    // Small diagrams read better: split long ones into flows linked with  %% @drill <flow>.
     const parts = lines.filter(l => /^\s*(participant|actor)\s/.test(l)).length;
-    if (parts > 9) warnings.push({ line: 1, message: `${parts} participants — group or split (aim for ≤ 8)` });
+    if (parts > 5) warnings.push({ line: 1, message: `${parts} participants — split into flows (aim for ≤ 5)` });
+    const msgs = parseDiagram(src, 'sequence').length;
+    if (msgs > 10) warnings.push({ line: 1, message: `${msgs} messages — split into flows linked with %% @drill (aim for ≤ 10)` });
   }
   if (type === 'architecture') {
     const nodes = parseDiagram(src, 'architecture').length;
