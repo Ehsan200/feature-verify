@@ -364,13 +364,16 @@ abbr.term { text-decoration:underline dotted var(--muted); text-underline-offset
 .stage g.fv-drill-node > rect, .stage g.fv-drill-node > path, .stage g.fv-drill-node > polygon, .stage g.fv-drill-node > circle { stroke:var(--accent) !important; stroke-width:2.5px !important; }
 .stage .edgeLabel.fv-drill { cursor:pointer; }
 .stage .edgeLabel.fv-drill span, .stage .edgeLabel.fv-drill p { color:var(--accent) !important; text-decoration:underline; }
-.stage g.fv-off { opacity:.22; }
-.stage g.fv-on > rect, .stage g.fv-on > path { stroke:var(--accent) !important; stroke-width:2.5px !important; }
+.stage g.fv-off > rect, .stage g.fv-off > path { fill:var(--panel) !important; stroke:var(--line-strong) !important; }
+.stage g.fv-off text { fill:var(--muted) !important; }
+.stage g.fv-on > rect:first-of-type, .stage g.fv-on > path:first-of-type { stroke:var(--accent) !important; stroke-width:2.5px !important; }
+.stage g.fv-on .er.entityBox, .stage g.fv-on > rect:first-of-type { fill:var(--accent-soft) !important; }
 tr.hlrow td { background:var(--accent-soft); }
 .panes.fs { position:fixed; inset:0; z-index:50; background:var(--bg); padding:12px; margin:0; }
 .panes.fs .canvas { height:calc(100vh - 66px) !important; }
-.panes .fsclose { display:none; }
-.panes.fs .fsclose { display:block; position:fixed; bottom:22px; right:24px; z-index:51; box-shadow:var(--shadow); }
+.panes .fsbar { display:none; }
+.panes.fs .fsbar { display:flex; gap:8px; position:fixed; bottom:22px; right:24px; z-index:51; }
+.panes.fs .fsbar .iconbtn { box-shadow:var(--shadow); }
 body.noscroll { overflow:hidden; }
 .usedby { display:flex; flex-wrap:wrap; gap:4px; }
 .usedby .chip { font-size:11px; padding:1px 7px; }
@@ -491,7 +494,9 @@ function decorate(src) {
     ['ui', '--ui', '--ui-line'], ['svc', '--node', '--node-line'], ['store', '--store', '--store-line'], ['ext', '--ext', '--ext-line'],
     ['assumed', '--warn-soft', '--warn', '4 3'], ['gap', '--bad-soft', '--bad', '4 3'],
   ].map(([n, f, s, dash]) => 'classDef ' + n + ' fill:' + css(f) + ',stroke:' + css(s) + ',color:' + css('--text') + (dash ? ',stroke-dasharray:' + dash : ''))
-    .concat(['classDef fvOn stroke:' + css('--accent') + ',stroke-width:3px', 'classDef fvOff opacity:0.22']);
+    // highlight: used parts get the accent; the rest stay readable but neutral (no transparency — it reads as disabled)
+    .concat(['classDef fvOn fill:' + css('--accent-soft') + ',stroke:' + css('--accent') + ',stroke-width:3px,color:' + css('--text'),
+      'classDef fvOff fill:' + css('--panel') + ',stroke:' + css('--line-strong') + ',color:' + css('--muted')]);
   if (/^(flowchart|graph)$/.test(head) || /^stateDiagram/.test(head)) return src.replace(/\s*$/, '\n') + defs.map(d => '  ' + d).join('\n') + '\n';
   return src;
 }
@@ -677,6 +682,7 @@ function route() {
   else if (tab === 'intent') intentTab(f, body);
   else if (tab === 'concepts') conceptsTab(f, body);
   else diagramTab(f, tab, r.view, r.flow, body);
+  if (!fsToggle) fsWanted = false;
   main.scrollTop = 0;
 }
 
@@ -877,10 +883,10 @@ function diagramTab(f, type, view, flow, body) {
   const zoomAll = fn => () => { canvases.forEach(cv => cv && fn(cv)); zl.textContent = Math.round((canvases[0]?.scale() || 1) * 100) + '%'; };
   zoomCtl.append(h('button', { class: 'iconbtn', title: 'Zoom out (−)', onclick: zoomAll(cv => cv.zoom(1 / 1.2)) }, '−'), zl,
     h('button', { class: 'iconbtn', title: 'Zoom in (+)', onclick: zoomAll(cv => cv.zoom(1.2)) }, '+'),
-    h('button', { class: 'iconbtn', title: 'Fit (0)', onclick: zoomAll(cv => cv.fit()) }, 'Fit'),
+    h('button', { class: 'iconbtn', title: 'Fit (0)', onclick: zoomAll(cv => cv.fit(true)) }, 'Fit'),
     h('button', { class: 'iconbtn', title: 'Actual size', onclick: zoomAll(cv => cv.setScale(1)) }, '1:1'), fullscreenCtl(panes, canvases));
   Promise.all(canvases.map(cv => cv?.ready)).then(() => { zl.textContent = Math.round((canvases[0]?.scale() || 1) * 100) + '%'; });
-  onkeydown = e => { if (e.target.closest('input')) return; if (e.key === '+' || e.key === '=') zoomAll(cv => cv.zoom(1.2))(); if (e.key === '-') zoomAll(cv => cv.zoom(1 / 1.2))(); if (e.key === '0') zoomAll(cv => cv.fit())(); };
+  onkeydown = e => { if (e.target.closest('input')) return; if (e.key === '+' || e.key === '=') zoomAll(cv => cv.zoom(1.2))(); if (e.key === '-') zoomAll(cv => cv.zoom(1 / 1.2))(); if (e.key === '0') zoomAll(cv => cv.fit(true))(); };
 
   if (type === 'sequence') body.append(diffBar(f));
   body.append(termBar(f, type, picks.map(k => options.find(x => x.key === k).dg.src).join('\n')));
@@ -930,9 +936,9 @@ function mapTab(f, type, view, flow, body) {
   const cv = mountCanvas(c, dg, onDrill, x => drillLabel(sys, x), hlSet);
   const zl = h('span', {}, '');
   const z = fn => () => { cv && fn(cv); zl.textContent = Math.round((cv?.scale() || 1) * 100) + '%'; };
-  zoomCtl.append(h('button', { class: 'iconbtn', onclick: z(x => x.zoom(1 / 1.2)) }, '−'), zl, h('button', { class: 'iconbtn', onclick: z(x => x.zoom(1.2)) }, '+'), h('button', { class: 'iconbtn', onclick: z(x => x.fit()) }, 'Fit'), h('button', { class: 'iconbtn', onclick: z(x => x.setScale(1)) }, '1:1'), fullscreenCtl(panes, [cv]));
+  zoomCtl.append(h('button', { class: 'iconbtn', onclick: z(x => x.zoom(1 / 1.2)) }, '−'), zl, h('button', { class: 'iconbtn', onclick: z(x => x.zoom(1.2)) }, '+'), h('button', { class: 'iconbtn', onclick: z(x => x.fit(true)) }, 'Fit'), h('button', { class: 'iconbtn', onclick: z(x => x.setScale(1)) }, '1:1'), fullscreenCtl(panes, [cv]));
   cv?.ready.then(() => { zl.textContent = Math.round(cv.scale() * 100) + '%'; });
-  onkeydown = e => { if (e.target.closest('input, select')) return; if (e.key === '+' || e.key === '=') z(x => x.zoom(1.2))(); if (e.key === '-') z(x => x.zoom(1 / 1.2))(); if (e.key === '0') z(x => x.fit())(); };
+  onkeydown = e => { if (e.target.closest('input, select')) return; if (e.key === '+' || e.key === '=') z(x => x.zoom(1.2))(); if (e.key === '-') z(x => x.zoom(1 / 1.2))(); if (e.key === '0') z(x => x.fit(true))(); };
   body.append(termBar(sys, type, dg.src));
   if (dg.elements.length) body.append(elementTable(sys, 'code', dg, onDrill, hl));
 }
@@ -977,16 +983,18 @@ function elementTable(f, kind, dg, onDrill, hl) {
 }
 
 // Full screen: the panes fill the window (button, F key, or double-click a diagram); Esc or ✕ leaves.
-let fsToggle = null;
+// Stays on while you click into nested diagrams (fsWanted survives the re-render); ← Back steps out of a drill.
+let fsToggle = null, fsWanted = false;
 function fullscreenCtl(panes, canvases) {
-  const toggle = on => { panes.classList.toggle('fs', on); document.body.classList.toggle('noscroll', on); requestAnimationFrame(() => canvases.forEach(cv => cv?.fit())); };
+  const toggle = on => { fsWanted = on; panes.classList.toggle('fs', on); document.body.classList.toggle('noscroll', on); requestAnimationFrame(() => canvases.forEach(cv => cv?.fit())); };
   fsToggle = toggle;
-  panes.append(h('button', { class: 'iconbtn fsclose', onclick: () => toggle(false) }, '✕ Exit full screen (Esc)'));
+  panes.append(h('div', { class: 'fsbar' }, h('button', { class: 'iconbtn', title: 'Back (Alt+←)', onclick: () => history.back() }, '← Back'), h('button', { class: 'iconbtn', onclick: () => toggle(false) }, '✕ Exit full screen (Esc)')));
+  if (fsWanted) toggle(true);
   return h('button', { class: 'iconbtn', title: 'Full screen (F, or double-click the diagram)', onclick: () => toggle(!panes.classList.contains('fs')) }, '⛶ Full screen');
 }
 addEventListener('keydown', e => {
   if (!fsToggle || e.target.closest?.('input, select, textarea')) return;
-  if (e.key === 'Escape') fsToggle(false);
+  if (e.key === 'Escape' && document.querySelector('.panes.fs')) fsToggle(false);
   if (e.key === 'f' || e.key === 'F') fsToggle(!document.querySelector('.panes.fs'));
 });
 
@@ -1063,13 +1071,19 @@ function mountCanvas(el, dg, onDrill, label = x => x, hl = null) {
   const apply = () => { stage.style.transform = 'translate(' + x + 'px,' + y + 'px) scale(' + s + ')'; };
   const api = {
     scale: () => s,
-    fit() {
+    // fit(): readable start — fill the width, but never shrink text below READABLE; a diagram bigger than the frame
+    // starts at its top-left and is panned. fit(true) (Fit button, 0 key): the whole diagram. Compare: each pane's width.
+    fit(whole = false) {
       if (!w) return;
-      const W = el.clientWidth, maxH = Math.min(innerHeight * 0.72, 920), full = !!el.closest('.fs');
-      s = full ? Math.min((W - 48) / w, (innerHeight - 114) / ht, 2) : Math.min((W - 48) / w, 1.25);
+      const READABLE = 0.75;
+      const W = el.clientWidth, full = !!el.closest('.fs'), maxH = full ? innerHeight - 66 : Math.min(innerHeight * 0.72, 920);
+      const sw = (W - 48) / w, sh = (maxH - 48) / ht, cap = full ? 2 : 1.25;
+      // Compare (two panes side by side): fill each pane's width, so both sides line up at the same size.
+      const cmp = !whole && !!el.closest('.panes.n2');
+      s = whole ? Math.min(sw, sh, cap) : cmp ? Math.min(sw, cap) : Math.min(cap, Math.max(Math.min(sw, 1.25), Math.min(READABLE, cap)));
       if (!full) el.style.height = Math.max(240, Math.min(maxH, ht * s + 48)) + 'px';
       const H = el.clientHeight;
-      x = (W - w * s) / 2; y = Math.max(24, (H - ht * s) / 2); apply();
+      x = w * s > W - 48 ? 24 : (W - w * s) / 2; y = ht * s > H - 48 ? 24 : (H - ht * s) / 2; apply();
     },
     setScale(n, cx = el.clientWidth / 2, cy = el.clientHeight / 2) { n = Math.min(4, Math.max(0.15, n)); x = cx - (cx - x) * n / s; y = cy - (cy - y) * n / s; s = n; apply(); },
     zoom(f, cx, cy) { api.setScale(s * f, cx, cy); },
@@ -1085,8 +1099,12 @@ function mountCanvas(el, dg, onDrill, label = x => x, hl = null) {
       const svgEl = stage.querySelector('svg');
       if (dg.flow != null && /^sequenceDiagram/.test(dg.src.trimStart())) hookMessages(svgEl, dg, onDrill, label);
       else hookMap(svgEl, dg, onDrill, label, hl);
-      const vb = svgEl.viewBox?.baseVal;
-      w = vb?.width || svgEl.getBBox().width; ht = vb?.height || svgEl.getBBox().height;
+      // Mermaid's viewBox can be smaller than what it draws (wide flowcharts with subgraphs) — use the real extent.
+      const vb = svgEl.viewBox?.baseVal, bb = svgEl.getBBox(), pad = 12;
+      const x0 = Math.min(vb?.width ? vb.x : bb.x, bb.x) - pad, y0 = Math.min(vb?.width ? vb.y : bb.y, bb.y) - pad;
+      const x1 = Math.max(vb?.width ? vb.x + vb.width : bb.x + bb.width, bb.x + bb.width) + pad, y1 = Math.max(vb?.width ? vb.y + vb.height : bb.y + bb.height, bb.y + bb.height) + pad;
+      w = x1 - x0; ht = y1 - y0;
+      svgEl.setAttribute('viewBox', x0 + ' ' + y0 + ' ' + w + ' ' + ht);
       svgEl.setAttribute('width', w); svgEl.setAttribute('height', ht); svgEl.style.maxWidth = 'none';
       api.fit();
     } catch (e) {
